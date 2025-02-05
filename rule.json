@@ -1,0 +1,27 @@
+{
+    "good": [ "key+ok","ok"],
+    "bad": ["miss1", "miss2", "miss3", "miss12", 
+    "miss13", "miss23", "miss123", "dirty",
+     "Dirty", "AlignKey", "blank",
+     "Key(Miss123)", "Nokey", "hurt",
+      "cornerkey", "key", "particle failed",
+       "RDL break", "scratch failed", "Via failed"
+       ,"Black hole"]
+}
+
+        
+        
+        
+      
+        
+        
+       
+       
+        
+        
+
+        
+        
+        
+       
+       
