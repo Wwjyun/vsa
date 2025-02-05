@@ -1,0 +1,7 @@
+{
+    "Product A": ["MT", "LOSS1", "DC2", "LOSS2", "INNER1", "LOSS3", "RDL", "LOSS4", "INNER2", "LOSS5", "CU", "LOSS6", "EMC", "FPY"],
+    "Product B": ["MTLED", "RDLLED", "MTIC", "RDLIC"],
+    "Product C": ["0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0"]
+    
+  }
+  
