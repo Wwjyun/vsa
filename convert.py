@@ -17,7 +17,7 @@ def convert_defect_type(defect_data, good_defects):
 
 def convert_csv_files(input_folder, rules_file, user_selected_good=None):
     rules = load_classification_rules(rules_file)
-    
+
     for file_name in os.listdir(input_folder):
         if file_name.endswith('.csv'):
             input_file = os.path.join(input_folder, file_name)
@@ -27,7 +27,10 @@ def convert_csv_files(input_folder, rules_file, user_selected_good=None):
                 print(f"Skipping {file_name}: Missing required columns.")
                 continue
             
-            defect_data['ConvertedDefectType'] = convert_defect_type(defect_data, user_selected_good)
+            # Use user-selected good defects if provided, otherwise fall back to
+            # the rules loaded from the JSON file
+            good_defects = user_selected_good if user_selected_good is not None else rules.get('good', [])
+            defect_data['ConvertedDefectType'] = convert_defect_type(defect_data, good_defects)
             
             if 'No' in defect_data.columns:
                 converted_data = defect_data[['No', 'Col', 'Row', 'ConvertedDefectType']]

@@ -274,7 +274,8 @@ class MyApp(QWidget):
             code = self.input_code1.text() if self.current_button_name == 'MT' else self.input_code1.text()
             no = self.input_search.text()
             option = self.combo.currentText()  # 获取选项
-            open_image_from_search(number, code, no, self.current_button_name)
+            # Correct parameter order when calling open_image_from_search
+            open_image_from_search(option, number, code, no, self.current_button_name)
         except Exception as e:
             print(f"Error in search_image: {e}")
 
