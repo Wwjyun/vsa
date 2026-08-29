@@ -29,7 +29,11 @@ jobs:
         run: ruff format --check .
 
       - name: Test
-        run: pytest
+        run: |
+          pytest
+          $code = $LASTEXITCODE
+          Write-Host "pytest exit code: $code"
+          exit $code
         env:
           QT_QPA_PLATFORM: offscreen
           QTWEBENGINE_DISABLE_SANDBOX: "1"
