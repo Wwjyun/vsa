@@ -25,7 +25,8 @@ tested without constructing a window.
 | Area | Main files | Responsibility |
 | --- | --- | --- |
 | Entry point | `app.py`, `__main__.py` | Logging setup, `QApplication` lifecycle, `--smoke-test` |
-| Qt interface | `views/main_window.py`, `views/loss_map_window.py`, `views/custom_map_window.py` | User input, dialogs, previews, and window lifecycle |
+| Qt interface | `views/main_window.py`, `views/loss_map_window.py`, `views/custom_map_window.py`, `views/diagnostics_dialog.py` | User input, dialogs, previews, and window lifecycle |
+| Presentation layer | `ui/theme.py`, `ui/widgets.py` | Design tokens, the single stylesheet, and the reusable widgets the windows compose |
 | Interactive plots | `views/roi_plot.py`, `views/loss_map_plot.py`, `views/custom_map_plot.py` | Plotly/Dash charts, WebChannel events, temporary HTML and server cleanup |
 | Data logic | `services/data.py` | CSV schema validation, defect classification, loss-map merge |
 | Image and file services | `services/images.py`, `services/files.py`, `services/system.py` | Bounded-memory grids, copy operations, OS integration |

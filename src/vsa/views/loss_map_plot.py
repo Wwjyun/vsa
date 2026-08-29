@@ -198,6 +198,7 @@ class LossMapPlotController(QMainWindow):
             good_frame = preprocess_csv(first_csv, selection_type="good", flip=flip_first_csv)
             bad_frame = preprocess_csv(second_csv, selection_type="bad")
             merged = merge_loss_frames(good_frame, bad_frame)
+            self.merged = merged
         except (OSError, ValueError) as error:
             QMessageBox.warning(self.main_ui, "Loss map error", str(error))
             return

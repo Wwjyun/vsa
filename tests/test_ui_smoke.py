@@ -68,9 +68,16 @@ def test_plot_options_use_defaults_until_the_operator_overrides_them(qtbot):
 def test_plot_options_reach_the_loss_map_and_custom_map_windows(qtbot, monkeypatch):
     captured = {}
 
+    class FakeSignal:
+        def connect(self, slot):
+            pass
+
     class FakeController:
+        """Mirrors the parts of LossMapPlotController the window touches."""
+
         def __init__(self, main_ui, web_view, **kwargs):
             captured["loss"] = kwargs
+            self.point_selected = FakeSignal()
 
         def close(self):
             pass

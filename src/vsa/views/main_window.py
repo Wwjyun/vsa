@@ -6,19 +6,23 @@ from PySide6.QtGui import QCursor, QIntValidator, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from vsa.config import ConfigurationError, load_product_stages
-from vsa.diagnostics import diagnostic_summary
+from vsa.config import (
+    LOSS_STAGE_PAIRS,
+    ConfigurationError,
+    get_data_root,
+    load_product_stages,
+)
 from vsa.models import InspectionSelection
 from vsa.paths import (
     csv_path,
@@ -30,12 +34,27 @@ from vsa.paths import (
 )
 from vsa.services.files import copy_file, copy_folder_contents
 from vsa.services.system import open_local_file
+from vsa.ui.widgets import (
+    ActionButton,
+    AppHeader,
+    DataRow,
+    FieldLabel,
+    LabeledField,
+    PreviewPane,
+    Separator,
+    SidePanel,
+    StageRail,
+    StatusPill,
+    UnitField,
+    is_loss_stage,
+)
 from vsa.views.actions import (
     export_horizontal_comparison,
     export_vertical_comparison,
     export_vertical_yield,
 )
 from vsa.views.custom_map_window import CustomizeMapWindow
+from vsa.views.diagnostics_dialog import DiagnosticsDialog
 from vsa.views.loss_map_window import LossMapWindow
 from vsa.views.roi_plot import RoiPlotWindow
 from vsa.workers import FunctionWorker
@@ -45,134 +64,252 @@ logger = logging.getLogger(__name__)
 DEFAULT_PLOT_WIDTH = 1000
 DEFAULT_PLOT_HEIGHT = 800
 DEFAULT_POINT_SIZE = 2
+STAGE_COUNT = 14
+
+
+def _relative_to_data_root(path: Path) -> str:
+    """Show paths relative to the data root so the UI never exposes machine paths."""
+
+    try:
+        return str(Path(path).relative_to(get_data_root()))
+    except ValueError:
+        return Path(path).name
 
 
 class MainWindow(QWidget):
+    """Operator window.
+
+    The public surface other modules rely on is unchanged: ``combo``,
+    ``input_number``, ``input_code1``, ``input_search``, ``input_plot_*``,
+    ``buttons``, ``preview_label``, ``status_label``, ``current_button_name``,
+    ``plot_options()``, ``selected_values()`` and ``run_background_task()``.
+    """
+
     def __init__(self):
         super().__init__()
+        self.setObjectName("window")
         self.current_button_name = ""
         self.custom_color_map = None
         self.thread_pool = QThreadPool.globalInstance()
         self.active_workers: set[FunctionWorker] = set()
         self.initUI()
 
+    # ------------------------------------------------------------------ UI
     def initUI(self):
-        layout = QGridLayout()
         self.load_button_names_from_json()
 
-        self.label_number = QLabel("Lot ID", self)
-        self.input_number = QLineEdit(self)
-        self.label_code1 = QLabel("Component ID", self)
-        self.input_code1 = QLineEdit(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_header())
+        root.addWidget(self._build_query_bar())
 
-        self.label_dropdown = QLabel("Product", self)
-        self.combo = QComboBox(self)
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        self.stage_rail = StageRail(STAGE_COUNT, parent=self)
+        self.buttons = self.stage_rail.buttons  # kept for callers and tests
+        for button in self.buttons:
+            button.clicked.connect(self.button_clicked)
+        body.addWidget(self.stage_rail)
+
+        center = QWidget(self)
+        center_layout = QVBoxLayout(center)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
+        self.preview = PreviewPane(center)
+        self.preview_label = self.preview.label  # actions.py writes to this
+        center_layout.addWidget(self.preview, 1)
+        center_layout.addWidget(self._build_footer_bar())
+        body.addWidget(center, 1)
+
+        body.addWidget(self._build_side_panel())
+        root.addLayout(body, 1)
+
+        self.update_button_names()
+        self.setWindowTitle("VSA")
+        self.setMinimumSize(1120, 720)
+        self.resize(1440, 900)
+
+    def _build_header(self) -> AppHeader:
+        header = AppHeader("VSA", "Visual Stage Analysis", self)
+        self.status_pill = StatusPill("Ready", header)
+        self.status_label = self.status_pill.label  # callers keep setText()ing this
+        header.add_trailing(self.status_pill)
+        diagnostics_button = QPushButton("Diagnostics", header)
+        diagnostics_button.setObjectName("ghost")
+        diagnostics_button.clicked.connect(self.show_diagnostics)
+        header.add_trailing(diagnostics_button)
+        return header
+
+    def _build_query_bar(self) -> QFrame:
+        bar = QFrame(self)
+        bar.setObjectName("queryBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(18)
+
+        self.combo = QComboBox(bar)
         self.combo.addItems(self.button_name_map or ["Product A"])
         self.combo.currentTextChanged.connect(self.update_button_names)
-        layout.addWidget(self.label_dropdown, 0, 0)
-        layout.addWidget(self.combo, 0, 1)
-        layout.addWidget(self.label_number, 1, 0)
-        layout.addWidget(self.input_number, 1, 1)
-        layout.addWidget(self.label_code1, 1, 2)
-        layout.addWidget(self.input_code1, 1, 3)
 
-        self.label_plot_width = QLabel("Map width", self)
-        self.input_plot_width = QLineEdit(self)
+        self.input_number = QLineEdit(bar)
+        self.input_number.setPlaceholderText("DEMO-LOT")
+
+        self.input_code1 = QLineEdit(bar)
+        self.input_code1.setPlaceholderText("DEMO-CMP")
+
+        product_field = LabeledField("Product", self.combo, 190, bar)
+        lot_field = LabeledField("Lot ID", self.input_number, 210, bar)
+        component_field = LabeledField("Component ID", self.input_code1, 210, bar)
+        self.label_dropdown = product_field.label
+        self.label_number = lot_field.label
+        self.label_code1 = component_field.label
+        layout.addWidget(product_field)
+        layout.addWidget(lot_field)
+        layout.addWidget(component_field)
+
+        search_button = QPushButton("Search", bar)
+        search_button.setObjectName("primary")
+        search_button.setFixedHeight(36)
+        search_button.clicked.connect(self.search)
+        layout.addWidget(search_button, 0, Qt.AlignBottom)
+        layout.addWidget(Separator(True, 38, bar), 0, Qt.AlignBottom)
+
+        options = QWidget(bar)
+        options_layout = QVBoxLayout(options)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(6)
+        options_label = FieldLabel("Map options", options)
+        options_label.setToolTip("Optional. Applies to Loss Map and Customize Map.")
+        options_row = QHBoxLayout()
+        options_row.setContentsMargins(0, 0, 0, 0)
+        options_row.setSpacing(8)
+
+        width_field = UnitField("W", 104, options)
+        self.input_plot_width = width_field.edit
         self.input_plot_width.setPlaceholderText(str(DEFAULT_PLOT_WIDTH))
         self.input_plot_width.setValidator(QIntValidator(100, 10000, self))
-        self.label_plot_height = QLabel("Map height", self)
-        self.input_plot_height = QLineEdit(self)
+        self.label_plot_width = options_label
+
+        height_field = UnitField("H", 104, options)
+        self.input_plot_height = height_field.edit
         self.input_plot_height.setPlaceholderText(str(DEFAULT_PLOT_HEIGHT))
         self.input_plot_height.setValidator(QIntValidator(100, 10000, self))
-        layout.addWidget(self.label_plot_width, 2, 0)
-        layout.addWidget(self.input_plot_width, 2, 1)
-        layout.addWidget(self.label_plot_height, 2, 2)
-        layout.addWidget(self.input_plot_height, 2, 3)
+        self.label_plot_height = options_label
 
-        self.label_point_size = QLabel("Point size", self)
-        self.input_point_size = QLineEdit(self)
+        point_field = UnitField("Point", 108, options)
+        self.input_point_size = point_field.edit
         self.input_point_size.setPlaceholderText(str(DEFAULT_POINT_SIZE))
         self.input_point_size.setValidator(QIntValidator(1, 100, self))
-        layout.addWidget(self.label_point_size, 2, 4)
-        layout.addWidget(self.input_point_size, 2, 5)
+        self.label_point_size = options_label
 
-        search_button = QPushButton("Search", self)
-        search_button.clicked.connect(self.search)
-        layout.addWidget(search_button, 3, 0, 1, 6, alignment=Qt.AlignCenter)
+        times = QLabel("×", options)
+        times.setObjectName("hint")
+        options_row.addWidget(width_field)
+        options_row.addWidget(times)
+        options_row.addWidget(height_field)
+        options_row.addSpacing(4)
+        options_row.addWidget(point_field)
+        options_layout.addWidget(options_label)
+        options_layout.addLayout(options_row)
+        layout.addWidget(options, 0, Qt.AlignBottom)
+        layout.addStretch(1)
+        return bar
 
-        self.status_label = QLabel("Ready", self)
-        layout.addWidget(self.status_label, 3, 6)
-
-        self.preview_label = QLabel(self)
-        self.preview_label.setAlignment(Qt.AlignCenter)
-        scroll_area = QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(self.preview_label)
-        layout.addWidget(scroll_area, 4, 0, 4, 6)
-
-        button_container = QHBoxLayout()
-        original_button = QPushButton("Export Original", self)
-        roi_button = QPushButton("ROI", self)
-        loss_custom_button = QPushButton("Loss Map", self)
-
-        original_button.clicked.connect(self.download_original)
-        roi_button.clicked.connect(self.plot_roi)
-        loss_custom_button.clicked.connect(self.open_loss_custom_ui)
-        button_container.addWidget(original_button)
-        button_container.addWidget(roi_button)
-        button_container.addWidget(loss_custom_button)
-
-        vertical_comparison_button = QPushButton("Stage Comparison", self)
-        horizontal_comparison_button = QPushButton("Lot Comparison", self)
-        customize_map_button = QPushButton("Customize Map", self)
-        vertical_yield_button = QPushButton("Yield Comparison", self)
-        export_map_button = QPushButton("Export Map", self)
-        diagnostics_button = QPushButton("Diagnostics", self)
-        export_map_button.clicked.connect(self.export_map)
-        diagnostics_button.clicked.connect(self.show_diagnostics)
-
-        vertical_comparison_button.clicked.connect(lambda: export_vertical_comparison(self))
-        horizontal_comparison_button.clicked.connect(lambda: export_horizontal_comparison(self))
-        customize_map_button.clicked.connect(self.open_customize_map_ui)
-        vertical_yield_button.clicked.connect(lambda: export_vertical_yield(self))
-
-        button_container.addWidget(vertical_comparison_button)
-        button_container.addWidget(horizontal_comparison_button)
-        button_container.addWidget(customize_map_button)
-        button_container.addWidget(vertical_yield_button)
-        button_container.addWidget(export_map_button)
-        button_container.addWidget(diagnostics_button)
-
-        layout.addLayout(button_container, 8, 0, 1, 6)
-
-        self.button_layout = QWidget(self)
-        self.button_vbox = QVBoxLayout(self.button_layout)
-
-        self.buttons = []
-        for i in range(14):
-            button = QPushButton(f"Button {i + 1}", self.button_layout)
-            button.setMinimumSize(100, 32)
-            button.clicked.connect(self.button_clicked)
-            self.buttons.append(button)
-            self.button_vbox.addWidget(button)
-
-        self.button_vbox.addStretch(1)
-        layout.addWidget(self.button_layout, 4, 6, 4, 1)
-        self.update_button_names()
-
-        self.label_search = QLabel("PKG NO", self)
-        self.input_search = QLineEdit(self)
-        self.button_search = QPushButton("Search", self)
+    def _build_footer_bar(self) -> QFrame:
+        bar = QFrame(self)
+        bar.setObjectName("footerBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(20, 14, 20, 14)
+        layout.setSpacing(12)
+        self.label_search = FieldLabel("PKG NO", bar)
+        self.input_search = QLineEdit(bar)
+        self.input_search.setPlaceholderText("—")
+        self.input_search.returnPressed.connect(self.search_image)
+        hint = QLabel("Double-click a point in ROI or Loss Map to fill this", bar)
+        hint.setObjectName("hint")
+        self.button_search = QPushButton("Open ROI image", bar)
+        self.button_search.setFixedHeight(36)
         self.button_search.clicked.connect(self.search_image)
-        layout.addWidget(self.label_search, 9, 0)
-        layout.addWidget(self.input_search, 9, 1, 1, 4)
-        layout.addWidget(self.button_search, 9, 5)
+        layout.addWidget(self.label_search)
+        layout.addWidget(self.input_search, 1)
+        layout.addWidget(hint)
+        layout.addWidget(self.button_search)
+        return bar
 
-        self.setLayout(layout)
-        self.setWindowTitle("VSA")
-        self.setMinimumSize(800, 600)
-        self.resize(1000, 800)
+    def _build_side_panel(self) -> SidePanel:
+        panel = SidePanel(272, self)
 
+        panel.add_section("Inspect")
+        self.roi_button = ActionButton("ROI", "Interactive defect points", "primary", panel)
+        self.roi_button.clicked.connect(self.plot_roi)
+        panel.add(self.roi_button)
+        self.loss_button = ActionButton("Loss Map", "Select a LOSS stage first", parent=panel)
+        self.loss_button.clicked.connect(self.open_loss_custom_ui)
+        panel.add(self.loss_button)
+        self.custom_button = ActionButton("Customize Map", "Legend-driven red ratio", parent=panel)
+        self.custom_button.clicked.connect(self.open_customize_map_ui)
+        panel.add(self.custom_button)
+
+        panel.add_section("Export")
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(7)
+        grid.setVerticalSpacing(7)
+        exports = (
+            ("Export Map", self.export_map),
+            ("Export Original", self.download_original),
+            ("Stage Comparison", lambda: export_vertical_comparison(self)),
+            ("Lot Comparison", lambda: export_horizontal_comparison(self)),
+        )
+        for index, (text, handler) in enumerate(exports):
+            button = QPushButton(text, panel)
+            button.setObjectName("gridButton")
+            button.clicked.connect(handler)
+            grid.addWidget(button, index // 2, index % 2)
+        yield_button = QPushButton("Yield Comparison", panel)
+        yield_button.setObjectName("gridButton")
+        yield_button.clicked.connect(lambda: export_vertical_yield(self))
+        grid.addWidget(yield_button, 2, 0, 1, 2)
+        panel.add_layout(grid)
+
+        panel.add_stretch()
+        panel.add(Separator(False, parent=panel))
+        panel.add_section("Session")
+        self.session_stage_row = DataRow("stage", "—", boxed=False, parent=panel)
+        self.session_worker_row = DataRow("workers", "0 active", boxed=False, parent=panel)
+        panel.add(DataRow("data root", "VSA_DATA_ROOT", boxed=False, parent=panel))
+        panel.add(self.session_stage_row)
+        panel.add(self.session_worker_row)
+        return panel
+
+    # --------------------------------------------------------------- state
+    def _stage_description(self, stage: str) -> str:
+        pair = LOSS_STAGE_PAIRS.get(stage)
+        if pair:
+            return f"{pair[0]} → {pair[1]}"
+        if not stage:
+            return "no stage selected"
+        return "process stage"
+
+    def _sync_stage_chrome(self) -> None:
+        stage = self.current_button_name
+        self.preview.set_stage(stage, self._stage_description(stage))
+        self.session_stage_row.set_value(stage or "—")
+        self.stage_rail.set_current(stage)
+        if is_loss_stage(stage):
+            self.loss_button.set_subtitle(f"Compare {self._stage_description(stage)}")
+        else:
+            self.loss_button.set_subtitle("Select a LOSS stage first")
+        selection_hint = (
+            f"map / {self.input_number.text() or '<lot>'} / {stage or '<stage>'} / "
+            f"{self.input_code1.text() or '<component>'}"
+        )
+        self.preview.set_path(selection_hint if stage else "")
+
+    # ------------------------------------------------------- unchanged API
     def plot_options(self) -> dict[str, int]:
         """Return the validated map size and point size, falling back to defaults."""
 
@@ -200,21 +337,17 @@ class MainWindow(QWidget):
             selection.product, selection.lot_id, stage, selection.component_id
         )
         pixmap = QPixmap(str(image_path))
+        display_path = _relative_to_data_root(image_path)
         if pixmap.isNull():
-            self.preview_label.setText(f"Image not found: {image_path}")
+            self.preview.show_message(f"Image not found:\n{display_path}")
             return
-        self.preview_label.setPixmap(
-            pixmap.scaled(
-                self.preview_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-        )
-        self.preview_label.adjustSize()
+        self.preview.show_pixmap(pixmap)
+        self.preview.set_path(display_path)
 
     def search(self):
         try:
             self.current_button_name = "MT"
+            self._sync_stage_chrome()
             self.display_map_image("MT")
         except ValueError as error:
             QMessageBox.warning(self, "Missing input", str(error))
@@ -223,6 +356,7 @@ class MainWindow(QWidget):
         try:
             button = self.sender()
             self.current_button_name = button.text()
+            self._sync_stage_chrome()
             self.display_map_image(self.current_button_name)
         except ValueError as error:
             QMessageBox.warning(self, "Missing input", str(error))
@@ -303,6 +437,8 @@ class MainWindow(QWidget):
         worker = FunctionWorker(function)
         self.active_workers.add(worker)
         self.status_label.setText("Working…")
+        self.status_pill.set_busy(True)
+        self.session_worker_row.set_value(f"{len(self.active_workers)} active")
         self.setCursor(QCursor(Qt.WaitCursor))
 
         def handle_success(result):
@@ -316,8 +452,10 @@ class MainWindow(QWidget):
 
         def handle_finished():
             self.active_workers.discard(worker)
+            self.session_worker_row.set_value(f"{len(self.active_workers)} active")
             if not self.active_workers:
                 self.status_label.setText("Ready")
+                self.status_pill.set_busy(False)
                 self.unsetCursor()
 
         worker.signals.succeeded.connect(handle_success)
@@ -326,7 +464,7 @@ class MainWindow(QWidget):
         self.thread_pool.start(worker)
 
     def show_diagnostics(self):
-        QMessageBox.information(self, "VSA diagnostics", diagnostic_summary())
+        DiagnosticsDialog(self).exec()
 
     def plot_roi(self):
         try:
@@ -425,13 +563,7 @@ class MainWindow(QWidget):
 
     def update_button_names(self):
         selected_option = self.combo.currentText()
-        if selected_option in self.button_name_map:
-            button_names = self.button_name_map[selected_option]
-            for i, button in enumerate(self.buttons):
-                if i < len(button_names):
-                    button.setText(button_names[i])
-                else:
-                    button.setText(f"Button {i + 1}")
-        else:
-            for i, button in enumerate(self.buttons):
-                button.setText(f"Button {i + 1}")
+        names = self.button_name_map.get(selected_option) or []
+        self.stage_rail.set_names(names)
+        self.stage_rail.count_label.setText(str(len(names)))
+        self._sync_stage_chrome()

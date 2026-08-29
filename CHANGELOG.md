@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-30
+
+- Redesigned the interface: one stylesheet and token set in `vsa/ui/theme.py`, reusable
+  widgets in `vsa/ui/widgets.py`, and no colors hard-coded in the windows.
+- Rebuilt the main window around a process-pipeline stage rail, a zoomable preview pane
+  with Fit / -/+ controls, and a side panel that groups Inspect, Export, and session state.
+- Gave the loss map a summary panel (loss rate, lost and kept counts) fed by the merged
+  frame the plot controller now keeps, and a PKG NO readout wired to the plot selection.
+- Gave the custom map a clickable defect-type legend with counts and a persistent red-point
+  ratio, replacing the readout that only existed inside the generated page.
+- Replaced the diagnostics `QMessageBox` with a panel that lists each value and can copy the
+  summary to the clipboard.
+- Showed map paths relative to `VSA_DATA_ROOT`, so the preview never exposes machine paths.
+
 - Restored `main.py` at the repository root as a launcher for `python main.py`, which the
   package move had removed.
 - Gave every defect type a stable color derived from its name, so the same defect keeps

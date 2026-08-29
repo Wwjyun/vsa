@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from vsa.logging_config import configure_logging
+from vsa.ui.theme import apply_theme
 from vsa.views.main_window import MainWindow
 
 
@@ -20,6 +21,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     smoke_test = "--smoke-test" in arguments
     arguments = [argument for argument in arguments if argument != "--smoke-test"]
     app = QApplication.instance() or QApplication(arguments)
+    app.setStyle("Fusion")  # predictable base for the stylesheet across Windows themes
+    apply_theme(app)
     window = MainWindow()
     window.show()
     if smoke_test:

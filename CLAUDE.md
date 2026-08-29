@@ -30,11 +30,15 @@ src/vsa/
     files.py          #   copy_file / copy_folder_contents
     images.py         #   bounded-memory image grid composition
     system.py         #   open_local_file (os.startfile / open / xdg-open)
+  ui/                 # presentation layer, no data or path knowledge
+    theme.py          #   COLORS, fonts, and the one QSS stylesheet
+    widgets.py        #   StageRail, PreviewPane, SidePanel, ActionButton, ...
   views/              # Qt + Plotly/Dash layer
-    main_window.py    #   MainWindow: search, stage buttons, exports, ROI launch
+    main_window.py    #   MainWindow: search, stage rail, exports, ROI launch
     roi_plot.py       #   ROI Dash server + WebChannel point selection
     loss_map_plot.py  #   loss-map figure, defect selection dialog, WebChannel
     loss_map_window.py, custom_map_window.py, custom_map_plot.py
+    diagnostics_dialog.py  #   non-sensitive environment summary panel
     actions.py        #   vertical/horizontal comparison + yield exports
 scripts/create_demo_data.py   # deterministic synthetic dataset
 tests/                        # pytest + pytest-qt, offscreen Qt via conftest.py
