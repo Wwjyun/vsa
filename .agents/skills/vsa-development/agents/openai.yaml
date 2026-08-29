@@ -1,0 +1,4 @@
+interface:
+  display_name: "VSA Development"
+  short_description: "Develop and validate the VSA desktop application"
+  default_prompt: "Use $vsa-development to modify and validate this VSA project."
