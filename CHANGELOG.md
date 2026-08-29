@@ -11,8 +11,9 @@
   figure builders.
 - Replaced fixed window geometry and pinned widget pixel sizes with minimum sizes and size
   policies so the windows scale with display size and DPI.
-- Added a CI packaging job that rebuilds the PyInstaller bundle in a clean Windows
-  environment, smoke-tests the packaged executable, and uploads it as an artifact.
+- Fixed the PyInstaller spec, which relied on `collect_*` hooks that import the package at
+  build time and therefore shipped a bundle without `vsa.resources` when the package was not
+  installed.
 
 ## 0.2.0 - 2026-08-29
 

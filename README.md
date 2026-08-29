@@ -149,9 +149,18 @@ Tests use temporary synthetic data and must not point at production `VSA_DATA_RO
 .\env\Scripts\pyinstaller.exe vsa.spec --noconfirm --clean
 ```
 
-The build produces a one-folder Windows bundle in `dist/VSA/`. CI rebuilds it in a clean
-environment on every push, smoke-tests the packaged executable, and uploads it as a workflow
-artifact, so a reviewer can download a runnable build without installing Python.
+The build produces a one-folder Windows bundle in `dist/VSA/`. Verify it the way a reviewer
+would receive it:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+.\dist\VSA\VSA.exe --smoke-test
+```
+
+`vsa.spec` resolves sources and resources from the spec directory rather than through the
+PyInstaller `collect_*` hooks, because those hooks import the package at build time and
+collect nothing when it is not installed. To reproduce that condition, uninstall the editable
+install (`pip uninstall vsa-portfolio`) before building.
 
 ## Security and data handling
 

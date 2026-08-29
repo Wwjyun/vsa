@@ -170,7 +170,7 @@
 
 - [x] 決定正式打包方式（例如 PyInstaller），並從乾淨 `env/` 重建驗證。
   - 驗證：`vsa.spec` 產生 one-folder bundle，本機以 `pyinstaller vsa.spec --noconfirm --clean` 重建成功，`dist/VSA/_internal/vsa/resources` 含兩個 JSON，`dist\VSA\VSA.exe --smoke-test` 以 offscreen 執行回傳 0。
-  - 乾淨環境重建由 CI 的 `package` job 負責：windows-latest 全新環境安裝 `requirements-dev.txt`、重建 bundle、對打包後的執行檔跑 smoke test，並上傳產出物。
+  - 乾淨環境驗證：移除 editable install（重現套件未安裝、直接從 checkout build 的情境）後重新 build，resources 完整且 `VSA.exe --smoke-test` 回傳 0。CI 不執行打包，避免每次 push 多花約 5 分鐘。
 - [x] 記錄資料格式版本與相容性策略，避免 CSV 欄位或 stage 改名後靜默產生錯圖。
   - 驗證：`docs/DATA_FORMAT.md` 定義 1.0 目錄／CSV 契約與相容性政策。
 - [x] 若多人使用，加入版本號、變更紀錄與可回報診斷資訊（程式版本、Python／依賴版本；不含敏感資料）。
