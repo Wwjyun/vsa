@@ -1,5 +1,7 @@
 # VSA — Visual Stage Analysis
 
+[![CI](https://github.com/Wwjyun/vsa/actions/workflows/ci.yml/badge.svg)](https://github.com/Wwjyun/vsa/actions/workflows/ci.yml)
+
 VSA is a Windows desktop application for inspecting manufacturing defect maps across process stages. It combines a PySide6 operator interface with pandas-based CSV processing, Plotly/Dash visualizations, ROI image lookup, loss-map comparison, and image export tools.
 
 This repository is a modernized portfolio version of an internal legacy project. It contains no production images, CSV records, credentials, or customer identifiers.
@@ -7,11 +9,12 @@ This repository is a modernized portfolio version of an internal legacy project.
 ## Highlights
 
 - Browse map images by product, Lot ID, Component ID, and process stage.
-- Inspect defect points interactively and open their TIFF ROI images.
-- Compare adjacent stages with configurable good/bad defect classifications.
-- Export source images, maps, vertical stage comparisons, and yield summaries.
+- Inspect defect points interactively (**ROI**) and open their TIFF ROI images.
+- Compare adjacent stages with operator-selected good/bad classifications (**Loss Map**).
+- Export original images, single maps, stage and lot comparisons, and yield summaries.
 - Keep production data outside the repository through `VSA_DATA_ROOT`.
 - Run deterministic unit and GUI smoke tests without accessing production data.
+- Report a non-sensitive environment summary from the UI (**Diagnostics**).
 
 ## Architecture
 
@@ -33,7 +36,7 @@ tested without constructing a window.
 ## Requirements
 
 - Windows 10/11
-- Python 3.13 (the tested development version is 3.13.0)
+- Python 3.13 (developed on 3.13.0; CI runs the 3.13 line on `windows-latest`)
 - Access to a VSA data directory matching the structure below
 
 ## Setup
@@ -50,7 +53,13 @@ Configure the data location for the current PowerShell session:
 $env:VSA_DATA_ROOT = "D:\path\to\sample-or-production-data"
 ```
 
-`env/` is the Python virtual environment. `.env.example` only documents the supported environment variable; the application does not automatically load `.env` files.
+Optional: change log verbosity for the session.
+
+```powershell
+$env:VSA_LOG_LEVEL = "DEBUG"
+```
+
+`env/` is the Python virtual environment. `.env.example` only documents the supported environment variables; the application does not automatically load `.env` files.
 
 ### Quick portfolio demo
 
@@ -77,10 +86,20 @@ Use these values in the UI:
 Typical workflow:
 
 1. Select a product.
-2. Enter a Lot ID and Component ID.
-3. Select a process stage to preview its map.
-4. Use **ROI** for interactive defect-point inspection.
-5. Select a `LOSS1`–`LOSS6` stage before opening **Loss Customized**.
+2. Enter a Lot ID and Component ID, then press **Search**.
+3. Select a process stage button to preview its map.
+4. Use **ROI** for interactive defect-point inspection. Double-click a point to send its
+   number to the **PKG NO** field; **Search** then opens that ROI image.
+5. Select a `LOSS1`–`LOSS6` stage before opening **Loss Map**.
+6. **Map width**, **Map height**, and **Point size** are optional. They apply to **Loss Map**
+   and **Customize Map**, and default to 1000 x 800 with point size 2 when left empty.
+
+Verify that the application starts without opening a window (this is what CI runs against
+the packaged build):
+
+```powershell
+.\env\Scripts\python.exe -m vsa --smoke-test
+```
 
 ## Expected data layout
 
@@ -88,7 +107,7 @@ Typical workflow:
 VSA_DATA_ROOT/
 └── <product>/
     ├── csv/<lot>/<stage>/<component>.csv
-    ├── map/<lot>/<stage>/<component>.png
+    ├── map/<lot>/<stage>/<component>.<image extension>
     ├── roi/<lot>/<stage>/<component>/<package-no>.tiff
     ├── org/<lot>/<stage>/<component>/...
     ├── bar/<lot>/<stage>/<stage>.png
@@ -104,16 +123,35 @@ CSV files used by interactive plots require these columns:
 | `Col` | Map column coordinate |
 | `DefectType` | Defect classification label |
 
+The full directory and CSV contract, including the compatibility policy, is documented in
+[docs/DATA_FORMAT.md](docs/DATA_FORMAT.md).
+
 ## Quality checks
 
 ```powershell
-.\env\Scripts\python.exe -m pytest
-.\env\Scripts\ruff.exe check .
-.\env\Scripts\ruff.exe format --check .
+.\env\Scripts
+uff.exe check .
+.\env\Scripts
+uff.exe format --check .
+.\env\Scripts\pytest.exe
 .\env\Scripts\python.exe -m pip check
 ```
 
+These are the same four checks CI runs, invoked the same way. Run `pytest` directly rather
+than through `python -m pytest`: the two put different entries on `sys.path`, so a suite that
+passes only under `python -m pytest` will fail in CI.
+
 Tests use temporary synthetic data and must not point at production `VSA_DATA_ROOT`.
+
+## Packaging
+
+```powershell
+.\env\Scripts\pyinstaller.exe vsa.spec --noconfirm --clean
+```
+
+The build produces a one-folder Windows bundle in `dist/VSA/`. CI rebuilds it in a clean
+environment on every push, smoke-tests the packaged executable, and uploads it as a workflow
+artifact, so a reviewer can download a runnable build without installing Python.
 
 ## Security and data handling
 
@@ -122,6 +160,9 @@ Tests use temporary synthetic data and must not point at production `VSA_DATA_RO
 - Local virtual environments, `.env` files, caches, generated HTML, and build artifacts are ignored by Git.
 - Do not add real manufacturing data or identifiers to issues, screenshots, fixtures, or commits.
 
-## Roadmap
+## Project history
 
-See [Todo.md](Todo.md) for prioritized correctness, testing, performance, packaging, and UI improvements.
+- [Todo.md](Todo.md) — the improvement audit of the legacy version, with the acceptance
+  condition and verification recorded for each item.
+- [CHANGELOG.md](CHANGELOG.md) — released and unreleased changes.
+- [LICENSE.md](LICENSE.md) — portfolio-use notice and data-handling terms.
