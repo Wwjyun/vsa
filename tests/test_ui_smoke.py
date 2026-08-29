@@ -1,8 +1,10 @@
-from ui import MyApp
+from pathlib import Path
+
+from vsa.views.main_window import MainWindow
 
 
 def test_main_window_starts_with_cartier_stage_names(qtbot):
-    window = MyApp()
+    window = MainWindow()
     qtbot.addWidget(window)
 
     assert window.windowTitle() == "VSA"
@@ -25,11 +27,13 @@ def test_main_window_starts_with_cartier_stage_names(qtbot):
 def test_roi_image_search_passes_product_to_lookup(qtbot, monkeypatch):
     captured = {}
 
-    def fake_open_image(option, number, code, package_no, stage):
+    def fake_roi_path(option, number, stage, code, package_no):
         captured["args"] = (option, number, code, package_no, stage)
+        return Path("synthetic.tiff")
 
-    monkeypatch.setattr("ui.open_image_from_search", fake_open_image)
-    window = MyApp()
+    monkeypatch.setattr("vsa.views.main_window.roi_image_path", fake_roi_path)
+    monkeypatch.setattr("vsa.views.main_window.open_local_file", lambda path: path)
+    window = MainWindow()
     qtbot.addWidget(window)
     window.input_number.setText("LOT-1")
     window.input_code1.setText("CMP-1")
@@ -39,3 +43,59 @@ def test_roi_image_search_passes_product_to_lookup(qtbot, monkeypatch):
     window.search_image()
 
     assert captured["args"] == ("Product A", "LOT-1", "CMP-1", "42", "MT")
+
+
+def test_plot_options_use_defaults_until_the_operator_overrides_them(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.plot_options() == {
+        "plot_width": 1000,
+        "plot_height": 800,
+        "point_size": 2,
+    }
+
+    window.input_plot_width.setText("1200")
+    window.input_point_size.setText("5")
+
+    assert window.plot_options() == {
+        "plot_width": 1200,
+        "plot_height": 800,
+        "point_size": 5,
+    }
+
+
+def test_plot_options_reach_the_loss_map_and_custom_map_windows(qtbot, monkeypatch):
+    captured = {}
+
+    class FakeController:
+        def __init__(self, main_ui, web_view, **kwargs):
+            captured["loss"] = kwargs
+
+        def close(self):
+            pass
+
+    class FakeCustomWindow:
+        def __init__(self, selection, map_size):
+            captured["custom"] = map_size
+
+        def show(self):
+            pass
+
+    monkeypatch.setattr("vsa.views.loss_map_window.LossMapPlotController", FakeController)
+    monkeypatch.setattr("vsa.views.main_window.CustomizeMapWindow", FakeCustomWindow)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.input_number.setText("LOT-1")
+    window.input_code1.setText("CMP-1")
+    window.current_button_name = "LOSS1"
+    window.input_plot_width.setText("1200")
+    window.input_plot_height.setText("900")
+    window.input_point_size.setText("4")
+
+    window.open_loss_custom_ui()
+    window.open_customize_map_ui()
+
+    assert captured["loss"] == {"plot_width": 1200, "plot_height": 900, "point_size": 4}
+    assert captured["custom"] == (1200, 900)

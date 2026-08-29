@@ -3,7 +3,7 @@ from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from lossmap_plot import build_loss_figure, build_loss_html
+from vsa.views.loss_map_plot import build_loss_figure, build_loss_html, write_loss_page
 
 
 class Receiver(QObject):
@@ -35,11 +35,7 @@ def test_loss_map_html_contains_webchannel_double_click_bridge():
 
 def test_loss_map_double_click_reaches_qt_webchannel(qtbot, tmp_path):
     merged = pd.DataFrame({"Col": [1], "Row": [2], "SelectedNo": ["42"], "Color": ["red"]})
-    page_path = tmp_path / "loss-map.html"
-    page_path.write_text(
-        build_loss_html(build_loss_figure(merged, "LOSS1")),
-        encoding="utf-8",
-    )
+    page_path = write_loss_page(build_loss_figure(merged, "LOSS1"), tmp_path)
 
     view = QWebEngineView()
     qtbot.addWidget(view)

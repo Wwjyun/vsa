@@ -15,13 +15,20 @@ This repository is a modernized portfolio version of an internal legacy project.
 
 ## Architecture
 
+The application is an installable package under `src/vsa` with a single entry point
+(`vsa.app:main`). Qt code orchestrates; the computational layer has no Qt dependency and is
+tested without constructing a window.
+
 | Area | Main files | Responsibility |
 | --- | --- | --- |
-| Qt interface | `ui.py`, `lossmap_ui.py`, `customize_map_ui.py` | User input, dialogs, previews, and window lifecycle |
-| Interactive plots | `plot.py`, `lossmap_plot.py`, `customize_map_plot.py` | Plotly/Dash charts, WebChannel events, temporary HTML cleanup |
-| Data logic | `data_processing.py` | CSV schema validation, defect classification, loss-map merge |
-| Paths and configuration | `vsa_paths.py` | Data-root configuration, safe path construction, canonical stage names |
-| File export | `file_operations.py` | Testable file and folder copy operations |
+| Entry point | `app.py`, `__main__.py` | Logging setup, `QApplication` lifecycle, `--smoke-test` |
+| Qt interface | `views/main_window.py`, `views/loss_map_window.py`, `views/custom_map_window.py` | User input, dialogs, previews, and window lifecycle |
+| Interactive plots | `views/roi_plot.py`, `views/loss_map_plot.py`, `views/custom_map_plot.py` | Plotly/Dash charts, WebChannel events, temporary HTML and server cleanup |
+| Data logic | `services/data.py` | CSV schema validation, defect classification, loss-map merge |
+| Image and file services | `services/images.py`, `services/files.py`, `services/system.py` | Bounded-memory grids, copy operations, OS integration |
+| Plot assets | `services/colors.py`, `services/plotly_assets.py` | Stable defect colors and one shared offline Plotly bundle per window |
+| Paths and configuration | `paths.py`, `config.py`, `models.py` | Data-root configuration, safe path construction, canonical stage names |
+| Background work | `workers.py` | `QThreadPool` worker that keeps exports off the UI thread |
 
 ## Requirements
 
@@ -52,7 +59,7 @@ Generate a deterministic synthetic dataset and launch the app without production
 ```powershell
 .\env\Scripts\python.exe -m scripts.create_demo_data
 $env:VSA_DATA_ROOT = (Resolve-Path .\demo_data).Path
-.\env\Scripts\python.exe main.py
+.\env\Scripts\python.exe -m vsa
 ```
 
 Use these values in the UI:
@@ -64,7 +71,7 @@ Use these values in the UI:
 ## Run
 
 ```powershell
-.\env\Scripts\python.exe main.py
+.\env\Scripts\python.exe -m vsa
 ```
 
 Typical workflow:

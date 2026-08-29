@@ -1,15 +1,16 @@
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from lossmap_plot import PlotWindow
+from vsa.views.loss_map_plot import LossMapPlotController
 
 
-class LossMapUI(QWidget):
+class LossMapWindow(QWidget):
     def __init__(self, main_ui):
         super().__init__()
         self.main_ui = main_ui
-        self.setWindowTitle("CSV and Image Processor")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setWindowTitle("Loss map")
+        self.setMinimumSize(800, 600)
+        self.resize(1200, 800)
         self.setup_ui()
 
     def setup_ui(self):
@@ -23,7 +24,9 @@ class LossMapUI(QWidget):
         self.plot_data()
 
     def plot_data(self):
-        self.plot_window = PlotWindow(self.main_ui, self.web_view)
+        self.plot_window = LossMapPlotController(
+            self.main_ui, self.web_view, **self.main_ui.plot_options()
+        )
 
     def get_current_button_name(self):
         return self.main_ui.current_button_name

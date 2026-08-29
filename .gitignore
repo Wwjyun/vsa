@@ -41,3 +41,6 @@ demo_data/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Editable-install metadata
+*.egg-info/

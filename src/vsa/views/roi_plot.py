@@ -9,20 +9,26 @@ from io import BytesIO
 from pathlib import Path
 
 import dash.exceptions
-import pandas as pd
 import plotly.graph_objs as go
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
 from flask import Flask
 from PIL import Image
-from plotly.colors import qualitative
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QMainWindow,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 from werkzeug.serving import make_server
 
-from data_processing import validate_columns
-from vsa_paths import DYNAMIC_STAGES, roi_folder
+from vsa.config import DYNAMIC_STAGES
+from vsa.paths import roi_folder
+from vsa.services.colors import defect_color_map
+from vsa.services.data import read_defect_csv
 
 
 def _image_filename(value: object) -> str:
@@ -31,7 +37,16 @@ def _image_filename(value: object) -> str:
     return f"{value}.tiff"
 
 
-class PlotWindow(QMainWindow):
+def _thumbnail_view() -> QWebEngineView:
+    """Build a preview view that shrinks with the window instead of pinning pixels."""
+
+    view = QWebEngineView()
+    view.setMinimumSize(200, 200)
+    view.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+    return view
+
+
+class RoiPlotWindow(QMainWindow):
     url_signal = Signal(str)
 
     def __init__(
@@ -62,17 +77,17 @@ class PlotWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle(f"ROI inspection - {self.current_button_name}")
-        self.setGeometry(100, 100, 1600, 1200)
+        self.setMinimumSize(1000, 700)
+        self.resize(1600, 1200)
 
         self.main_layout = QVBoxLayout()
         self.top_layout = QHBoxLayout()
 
         self.web_view_left = QWebEngineView()
-        self.web_view_left.setFixedSize(1300, 900)
-        self.web_view_right_1 = QWebEngineView()
-        self.web_view_right_1.setFixedSize(330, 330)
-        self.web_view_right_2 = QWebEngineView()
-        self.web_view_right_2.setFixedSize(330, 330)
+        self.web_view_left.setMinimumSize(650, 450)
+        self.web_view_left.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.web_view_right_1 = _thumbnail_view()
+        self.web_view_right_2 = _thumbnail_view()
 
         if self.image_url.is_file():
             html_path = self.create_temp_html(self.image_url)
@@ -85,8 +100,7 @@ class PlotWindow(QMainWindow):
         self.bottom_layout = QHBoxLayout()
         self.dynamic_views = []
         for _folder in self.dynamic_folders:
-            dynamic_view = QWebEngineView()
-            dynamic_view.setFixedSize(330, 330)
+            dynamic_view = _thumbnail_view()
             self.bottom_layout.addWidget(dynamic_view)
             self.dynamic_views.append(dynamic_view)
 
@@ -99,16 +113,11 @@ class PlotWindow(QMainWindow):
         self.url_signal.connect(self.update_views)
 
     def prepare_data_and_plot(self):
-        defect_data = pd.read_csv(self.csv_path)
-        validate_columns(defect_data)
+        defect_data = read_defect_csv(self.csv_path)
         defect_data = defect_data.loc[defect_data["DefectType"] != "ok"].copy()
         defect_data["Image"] = defect_data["No"].map(_image_filename)
 
-        defect_types = sorted(defect_data["DefectType"].astype(str).unique())
-        color_map = {
-            defect: qualitative.Plotly[index % len(qualitative.Plotly)]
-            for index, defect in enumerate(defect_types)
-        }
+        color_map = defect_color_map(defect_data["DefectType"].astype(str).unique())
         colors = defect_data["DefectType"].astype(str).map(color_map)
         hover_texts = (
             "<b>DefectType:</b> "

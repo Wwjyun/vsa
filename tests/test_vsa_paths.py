@@ -1,8 +1,7 @@
 import pytest
 
-from vsa_paths import (
-    DATA_ROOT_ENV,
-    DYNAMIC_STAGES,
+from vsa.config import DATA_ROOT_ENV, DYNAMIC_STAGES
+from vsa.paths import (
     csv_path,
     map_image_path,
     roi_image_path,

@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from PIL import Image, ImageDraw
 
-from vsa_paths import STAGE_SEQUENCE
+from vsa.config import STAGE_SEQUENCE
 
 PRODUCT = "Product A"
 LOT_ID = "DEMO-LOT"

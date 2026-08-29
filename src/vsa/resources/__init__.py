@@ -1,0 +1,1 @@
+"""Packaged VSA configuration resources."""

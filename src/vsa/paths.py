@@ -2,41 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-DATA_ROOT_ENV = "VSA_DATA_ROOT"
-DEFAULT_DATA_ROOT = Path("D:/Database-PC")
-PROJECT_ROOT = Path(__file__).resolve().parent
-BUTTON_NAMES_PATH = PROJECT_ROOT / "button_names.json"
-
-STAGE_SEQUENCE = (
-    "MT",
-    "LOSS1",
-    "DC2",
-    "LOSS2",
-    "INNER1",
-    "LOSS3",
-    "RDL",
-    "LOSS4",
-    "INNER2",
-    "LOSS5",
-    "CU",
-    "LOSS6",
-    "EMC",
-    "FPY",
-)
-
-DYNAMIC_STAGES = ("MT", "DC2", "INNER1", "RDL", "INNER2", "EMC")
-
-LOSS_STAGE_PAIRS = {
-    "LOSS1": ("MT", "DC2"),
-    "LOSS2": ("DC2", "INNER1"),
-    "LOSS3": ("INNER1", "RDL"),
-    "LOSS4": ("RDL", "INNER2"),
-    "LOSS5": ("INNER2", "CU"),
-    "LOSS6": ("CU", "EMC"),
-}
+from vsa.config import get_data_root
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tiff", ".tif")
 WINDOWS_RESERVED_CHARACTERS = frozenset('<>:"|?*')
@@ -48,13 +16,6 @@ WINDOWS_RESERVED_NAMES = {
     *(f"COM{index}" for index in range(1, 10)),
     *(f"LPT{index}" for index in range(1, 10)),
 }
-
-
-def get_data_root() -> Path:
-    """Return the configured data root without requiring it to exist."""
-
-    configured = os.environ.get(DATA_ROOT_ENV)
-    return Path(configured).expanduser() if configured else DEFAULT_DATA_ROOT
 
 
 def validate_component(value: str, label: str) -> str:

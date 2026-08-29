@@ -1,4 +1,4 @@
-from file_operations import copy_file, copy_folder_contents
+from vsa.services.files import copy_file, copy_folder_contents
 
 
 def test_copy_file_creates_parent_but_not_filename_directory(tmp_path):

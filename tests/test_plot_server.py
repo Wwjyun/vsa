@@ -3,7 +3,7 @@ import socket
 import pandas as pd
 from PIL import Image
 
-from plot import PlotWindow
+from vsa.views.roi_plot import RoiPlotWindow
 
 
 def test_plot_window_stops_server_and_cleans_temp_files(qtbot, tmp_path):
@@ -17,7 +17,7 @@ def test_plot_window_stops_server_and_cleans_temp_files(qtbot, tmp_path):
     example_image = tmp_path / "ok.tiff"
     Image.new("RGB", (10, 10), "white").save(example_image)
 
-    window = PlotWindow(
+    window = RoiPlotWindow(
         csv_path,
         roi_folder,
         "MT",

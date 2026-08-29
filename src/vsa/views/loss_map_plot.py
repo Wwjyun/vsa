@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 import plotly.graph_objects as go
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
@@ -19,8 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data_processing import classify_defects, merge_loss_frames, validate_columns
-from vsa_paths import LOSS_STAGE_PAIRS, csv_path
+from vsa.config import LOSS_STAGE_PAIRS
+from vsa.paths import csv_path
+from vsa.services.data import classify_defects, merge_loss_frames, read_defect_csv
+from vsa.services.plotly_assets import PLOTLY_BUNDLE_NAME, write_plotly_bundle
 
 
 def select_defects(defect_types, title):
@@ -49,8 +50,7 @@ def select_defects(defect_types, title):
 
 
 def preprocess_csv(file_path, selection_type="good", flip=False, selector=select_defects):
-    defect_data = pd.read_csv(file_path)
-    validate_columns(defect_data)
+    defect_data = read_defect_csv(file_path)
     title = "Select Good Defects" if selection_type == "good" else "Select Bad Defects"
     selected_defects = selector(defect_data["DefectType"].unique(), title)
     return classify_defects(
@@ -62,6 +62,10 @@ def preprocess_csv(file_path, selection_type="good", flip=False, selector=select
 
 
 def build_loss_figure(merged, stage, point_size=2, width=1000, height=800):
+    if point_size < 1:
+        raise ValueError("Point size must be at least 1.")
+    if width < 100 or height < 100:
+        raise ValueError("Map width and height must be at least 100 pixels.")
     figure = go.Figure(
         go.Scattergl(
             x=merged["Col"],
@@ -91,7 +95,7 @@ def build_loss_figure(merged, stage, point_size=2, width=1000, height=800):
     return figure
 
 
-def build_loss_html(figure):
+def build_loss_html(figure, plotly_source=True):
     post_script = r"""
     (function () {
         const plot = document.getElementById('{plot_id}');
@@ -120,7 +124,7 @@ def build_loss_html(figure):
     """
     page_html = figure.to_html(
         full_html=True,
-        include_plotlyjs=True,
+        include_plotlyjs=plotly_source,
         post_script=post_script,
     )
     return page_html.replace(
@@ -130,7 +134,17 @@ def build_loss_html(figure):
     )
 
 
-class PlotWindow(QMainWindow):
+def write_loss_page(figure, directory):
+    """Write the loss-map page next to a single shared offline Plotly bundle."""
+
+    target_directory = Path(directory)
+    write_plotly_bundle(target_directory)
+    page_path = target_directory / "loss-map.html"
+    page_path.write_text(build_loss_html(figure, PLOTLY_BUNDLE_NAME), encoding="utf-8")
+    return page_path
+
+
+class LossMapPlotController(QMainWindow):
     point_selected = Signal(str)
 
     def __init__(
@@ -195,9 +209,7 @@ class PlotWindow(QMainWindow):
             self.plot_width,
             self.plot_height,
         )
-        page_html = build_loss_html(figure)
-        output_path = Path(self.temp_dir.name) / "loss-map.html"
-        output_path.write_text(page_html, encoding="utf-8")
+        output_path = write_loss_page(figure, self.temp_dir.name)
         self.web_view.setUrl(QUrl.fromLocalFile(str(output_path)))
 
     @Slot(str)

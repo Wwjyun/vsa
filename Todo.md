@@ -2,9 +2,9 @@
 
 > 盤點日期：2026-08-29
 >
-> 範圍：目前 `master` 分支的 19 個 Python 檔、JSON 設定、Git 忽略規則與本機 `env/` 虛擬環境。
+> 範圍：`src/vsa` 套件、`scripts/`、`tests/`（共 41 個 Python 檔）、封裝的 JSON 設定、CI 與打包設定，以及本機 `env/` 虛擬環境。
 >
-> 驗證現況：核心與開發依賴已安裝並鎖定；Python 編譯、Ruff、`pip check`、23 個 unit／GUI smoke tests、實際 Qt WebChannel 互動測試與合成資料啟動測試皆通過。
+> 驗證現況（2026-08-29 更新）：核心與開發依賴已安裝並鎖定；Ruff check／format、`pip check`、44 個 unit／GUI smoke tests、實際 Qt WebChannel 互動測試，以及以 `demo_data` 執行的 `python -m vsa --smoke-test` 皆通過。
 
 ## P0：先修正確性與資源問題
 
@@ -90,7 +90,8 @@
   - 匯出：目的目錄不存在、同名檔案已存在與複製錯誤。
   - 路徑安全：空白、中文、`..`、絕對路徑與非法字元。
 
-- [ ] 擴充 CSV 與 merge edge-case 測試。
+- [x] 擴充 CSV 與 merge edge-case 測試。
+  - 驗證：`tests/test_data_processing.py` 覆蓋空檔、只有標頭、非數值座標、重複座標，以及 inner／outer 對「僅存在單一 stage 座標」的行為與未知 join 策略。
   - 補空 CSV、非數值座標、重複座標、只存在單一 stage 的座標，以及明確的 join 策略。
 
 - [x] 加入 GUI smoke test。
@@ -103,53 +104,63 @@
 
 ## P2：重整架構與可維護性
 
-- [ ] 改成套件結構，例如 `src/vsa/`。
+- [x] 改成套件結構，例如 `src/vsa/`。
+  - 驗證：`src/vsa/{config,paths,models,workers}.py` 與 `services/`、`views/`、`resources/`；單一 entry point `vsa.app:main`（`python -m vsa`）。
   - `config.py`：資料根目錄、產品與 stage 設定。
   - `paths.py`：集中建立並驗證 CSV／map／ROI／org 路徑。
   - `services/`：CSV 運算、圖片合併、檔案匯出。
   - `views/`：Qt 視窗與訊號；GUI 不直接處理 pandas 與檔案複製。
   - 保留單一 entry point，移除 `main.py` 與 `ui.py` 重複啟動程式碼。
 
-- [ ] 整併或刪除重複／未接線模組。
+- [x] 整併或刪除重複／未接線模組。
+  - 驗證：`download.py`／`map_download.py`／`standby.py`／`defects.py`／`flip.py` 已刪除；轉換邏輯併入 `services/data.py`，`convert_csv_files()` 會實際套用 `rule.json`（`tests/test_convert.py`）。
   - `download.py` 與 `map_download.py` 完全重複。
   - 檢查 `standby.py`、`calculate_change.py`、`convert.py`、`defects.py`、`flip.py` 是否仍是正式流程的一部分。
   - `convert.py` 雖讀取 `rule.json`，實際轉換卻忽略 `rules`；預設 `user_selected_good=None` 還會造成 membership `TypeError`。
 
-- [ ] 將 `button_names.json`、`rule.json` 當作正式資源載入。
+- [x] 將 `button_names.json`、`rule.json` 當作正式資源載入。
+  - 驗證：`config.py` 以 `importlib.resources` 讀取並做 schema 驗證，`initUI()` 結束前呼叫一次 `update_button_names()`（`tests/test_config.py`、`tests/test_ui_smoke.py`）。
   - 不依賴目前工作目錄；使用模組位置或 package resources，明確指定 UTF-8。
   - 加 schema 驗證與清楚的 UI 錯誤，避免 JSON 壞掉後只退回空按鈕。
   - 初始化完成後立即呼叫一次按鈕更新；目前預設 Product A 仍會顯示 `Button 1...14`，直到產品選項改變。
 
-- [ ] 建立一致的資料模型與命名。
+- [x] 建立一致的資料模型與命名。
+  - 驗證：`models.InspectionSelection` 統一 product／lot_id／component_id／stage；UI 文案改為一致英文，`map weight`／`map hight` 等錯字與恆真條件式已移除（ruff `F` 規則把關未使用的 import／變數）。
   - 統一 `Lot ID`、`Component ID`、`PKG NO`、product、stage 的 Python 名稱與 UI 文案。
   - 修正 `map weight`／`map hight` 等文案，決定全中文或一致的英文介面。
   - 移除永遠相同的條件式，例如 `x if stage == 'MT' else x`，以及未使用的 import／變數。
 
-- [ ] 以 logging 取代 `print()` 與廣泛的 `except Exception`。
+- [x] 以 logging 取代 `print()` 與廣泛的 `except Exception`。
+  - 驗證：應用程式碼已無 `print()`；唯一的 `except Exception` 在 `workers.py` 的 worker 邊界，且會記錄 traceback 並回報給 UI。
   - UI 顯示可理解訊息；log 保留 traceback 與必要上下文，但不記錄秘密或大量生產 CSV 內容。
   - 捕捉具體例外；檔案不存在、CSV schema 錯誤與程式錯誤要分開處理。
 
-- [ ] 為所有外部資料做驗證與明確錯誤。
+- [x] 為所有外部資料做驗證與明確錯誤。
+  - 驗證：`services/data.py` 在 `read_csv` 後檢查欄位與數值型別；`services/images.py` 以 context manager 開圖並把 `DecompressionBombWarning` 升級為錯誤；複製／儲存操作回傳結果路徑或拋出具體例外。
   - `pd.read_csv()` 前後驗證檔案、編碼、必要欄位與數值型別。
   - `Image.open()` 使用 context manager，處理損壞圖片與超大圖片警告。
   - 所有複製、儲存與合併操作回傳結果或拋出具體例外，不要只印出錯誤後假裝成功。
 
 ## P2：效能、穩定性與 UX
 
-- [ ] 把耗時工作移出 Qt 主執行緒。
+- [x] 把耗時工作移出 Qt 主執行緒。
+  - 驗證：`workers.FunctionWorker` 搭配 `QThreadPool`，`MainWindow.run_background_task()` 提供忙碌游標、狀態列與錯誤對話框（`tests/test_workers.py`）。
   - CSV 載入／merge、圖片 resize／拼接、資料夾複製會讓 GUI 凍結；使用 `QThreadPool`／worker，提供進度、取消與錯誤回報。
 
-- [ ] 降低大型拼圖的記憶體尖峰。
+- [x] 降低大型拼圖的記憶體尖峰。
+  - 驗證：`services/images.py` 逐張開圖／縮放／貼上後關閉，並在合成前用 `estimate_canvas_bytes()` 擋下超過 512 MiB 的請求（`tests/test_image_services.py`）。
   - Vertical 圖目前約為 `15120 x 4340`，單一 RGB canvas 約 188 MiB，尚未計入 14 張 resize 後圖片與 Qt preview。
   - 逐張開啟、縮放、貼上後立即關閉；preview 使用縮圖，輸出尺寸改成可設定且先估算記憶體。
 
-- [ ] 優化 pandas／Plotly 建圖。
+- [x] 優化 pandas／Plotly 建圖。
+  - 驗證：hover 文字改為向量化字串運算（無 `iterrows()`）；`services/colors.py` 以名稱雜湊決定顏色，同一 defect 在不同檔案固定同色；百分比改用驗證後的總點數並處理除以 0；`services/plotly_assets.py` 讓每個視窗只寫一份離線 `plotly.min.js`，HTML 以相對路徑引用（`tests/test_plot_assets.py`）。
   - 避免 `iterrows()` 逐列建立 hover 資料；使用向量化字串操作。
   - 顏色映射改為固定、可重現，避免每次開啟同一 defect 顏色不同。
   - `customize_map_plot.py` 百分比不能寫死除以 `96721`；應使用驗證後的總點數／基準數，並定義分母為 0 的行為。
   - 評估 Plotly JS 重複嵌入每個 HTML 所造成的檔案大小，改成受控的共用資源或明確的離線 bundle。
 
-- [ ] 改善視窗與輸入體驗。
+- [x] 改善視窗與輸入體驗。
+  - 驗證：map width／height／point size 使用 `QIntValidator` 並實際傳入 Loss Map 與 Custom Map；缺少 stage／Lot ID／Component ID 會先擋下並以 `QMessageBox` 提示；所有視窗改用 `resize()`＋最小尺寸與 size policy，不再有固定像素 `setGeometry`／`setFixedSize`（`tests/test_ui_smoke.py`）。
   - 使用 `QIntValidator`／數值範圍驗證 map width、height、point size。
   - 沒選 stage、Lot ID 或 Component ID 時先阻擋操作。
   - 所有成功／失敗／找不到檔案都用一致的 `QMessageBox` 或狀態列，不只寫 console。
@@ -157,10 +168,15 @@
 
 ## P3：交付與文件化
 
-- [ ] 決定正式打包方式（例如 PyInstaller），並從乾淨 `env/` 重建驗證。
-- [ ] 記錄資料格式版本與相容性策略，避免 CSV 欄位或 stage 改名後靜默產生錯圖。
-- [ ] 若多人使用，加入版本號、變更紀錄與可回報診斷資訊（程式版本、Python／依賴版本；不含敏感資料）。
-- [ ] 補上授權／內部使用聲明、資料隱私與正式資料備份／唯讀政策。
+- [x] 決定正式打包方式（例如 PyInstaller），並從乾淨 `env/` 重建驗證。
+  - 驗證：`vsa.spec` 產生 one-folder bundle，本機以 `pyinstaller vsa.spec --noconfirm --clean` 重建成功，`dist/VSA/_internal/vsa/resources` 含兩個 JSON，`dist\VSA\VSA.exe --smoke-test` 以 offscreen 執行回傳 0。
+  - 乾淨環境重建由 CI 的 `package` job 負責：windows-latest 全新環境安裝 `requirements-dev.txt`、重建 bundle、對打包後的執行檔跑 smoke test，並上傳產出物。
+- [x] 記錄資料格式版本與相容性策略，避免 CSV 欄位或 stage 改名後靜默產生錯圖。
+  - 驗證：`docs/DATA_FORMAT.md` 定義 1.0 目錄／CSV 契約與相容性政策。
+- [x] 若多人使用，加入版本號、變更紀錄與可回報診斷資訊（程式版本、Python／依賴版本；不含敏感資料）。
+  - 驗證：`vsa.__version__` 0.2.0、`CHANGELOG.md`，以及 UI 上的 Diagnostics 按鈕（`diagnostics.py`，只輸出版本與平台）。
+- [x] 補上授權／內部使用聲明、資料隱私與正式資料備份／唯讀政策。
+  - 驗證：`LICENSE.md` 說明 portfolio 使用範圍、禁止納入正式資料，以及唯讀／備份責任。
 
 ## 建議執行順序
 

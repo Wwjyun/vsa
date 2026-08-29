@@ -1,7 +1,7 @@
 import pandas as pd
 
 from scripts.create_demo_data import COMPONENT_ID, LOT_ID, PRODUCT, create_demo_data
-from vsa_paths import STAGE_SEQUENCE
+from vsa.config import STAGE_SEQUENCE
 
 
 def test_demo_generator_creates_runnable_dataset(tmp_path):

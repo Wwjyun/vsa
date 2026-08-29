@@ -1,25 +1,30 @@
-# customize_map_plot.py
+"""Customizable defect map with legend-driven red-point ratio."""
 
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from data_processing import validate_columns
+from vsa.services.data import read_defect_csv, validate_defect_frame
+from vsa.services.plotly_assets import PLOTLY_BUNDLE_NAME, write_plotly_bundle
 
 
 def load_data_from_file(file_path):
-    df = pd.read_csv(file_path)
-    return df
+    return read_defect_csv(file_path)
 
 
-def generate_map(df, output_path, map_size=(20, 20), title_fontsize=20, margin=None):
-    validate_columns(df)
+def generate_map(df, output_path, map_size=(1000, 1000), title_fontsize=20, margin=None):
+    """Write an interactive defect map. ``map_size`` is (width, height) in pixels."""
+
+    if map_size[0] < 100 or map_size[1] < 100:
+        raise ValueError("Map width and height must be at least 100 pixels.")
+    if title_fontsize < 1:
+        raise ValueError("Title font size must be positive.")
+    df = validate_defect_frame(df)
     margin = margin or dict(l=70, r=30, b=70, t=70)
     # Filter out rows where DefectType is "ok"
     df_filtered = df[df["DefectType"] != "ok"]
@@ -48,8 +53,8 @@ def generate_map(df, output_path, map_size=(20, 20), title_fontsize=20, margin=N
         yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed"),
         legend_title="Defect Type",
         legend=dict(itemsizing="constant"),
-        width=map_size[0] * 50,  # Scale the width
-        height=map_size[1] * 50,  # Scale the height
+        width=map_size[0],
+        height=map_size[1],
         margin=margin,  # Adjust margins
         plot_bgcolor="white",  # Set background color to white
         paper_bgcolor="white",  # Set paper background color to white
@@ -101,15 +106,17 @@ def generate_map(df, output_path, map_size=(20, 20), title_fontsize=20, margin=N
     </script>
     """
 
-    fig_html = pio.to_html(fig, full_html=False)
+    output = Path(output_path)
+    write_plotly_bundle(output.parent)
+    fig_html = pio.to_html(fig, full_html=False, include_plotlyjs=PLOTLY_BUNDLE_NAME)
+    output.write_text(fig_html + js_code, encoding="utf-8")
+    return output
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(fig_html + js_code)
 
-
-class PlotWidget(QWidget):
-    def __init__(self):
+class CustomMapWidget(QWidget):
+    def __init__(self, map_size=(1000, 1000)):
         super().__init__()
+        self.map_size = map_size
         self.view = QWebEngineView()
         self.temp_dir = tempfile.TemporaryDirectory(prefix="vsa-custom-map-")
 
@@ -123,7 +130,7 @@ class PlotWidget(QWidget):
             return None
 
         output_path = Path(self.temp_dir.name) / "custom-map.html"
-        generate_map(df, output_path)
+        generate_map(df, output_path, map_size=self.map_size)
         return output_path
 
     def load_html(self, file_path):
