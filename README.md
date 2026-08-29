@@ -83,6 +83,13 @@ Use these values in the UI:
 .\env\Scripts\python.exe -m vsa
 ```
 
+`main.py` in the repository root is an equivalent launcher, kept so an existing shortcut or
+`python main.py` habit still works:
+
+```powershell
+.\env\Scripts\python.exe main.py
+```
+
 Typical workflow:
 
 1. Select a product.

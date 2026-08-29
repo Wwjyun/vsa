@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restored `main.py` at the repository root as a launcher for `python main.py`, which the
+  package move had removed.
 - Gave every defect type a stable color derived from its name, so the same defect keeps
   one color across lots, stages, and sessions.
 - Replaced the per-page inline Plotly bundle with one offline `plotly.min.js` written per
