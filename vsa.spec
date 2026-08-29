@@ -1,10 +1,12 @@
 # PyInstaller one-folder build for the Windows portfolio application.
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = collect_data_files("vsa")
 binaries = []
-hiddenimports = [
+# vsa.resources is only reached through importlib.resources, so PyInstaller cannot
+# see it by following imports.
+hiddenimports = collect_submodules("vsa") + [
     "dash",
     "dash.dcc",
     "dash.html",
