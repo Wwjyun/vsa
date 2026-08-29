@@ -4,67 +4,71 @@
 >
 > 範圍：目前 `master` 分支的 19 個 Python 檔、JSON 設定、Git 忽略規則與本機 `env/` 虛擬環境。
 >
-> 驗證現況：所有 Python 檔皆通過語法／AST 解析；尚未做 GUI 執行測試，因為目前 `env/` 內只有 `pip`，未安裝專案依賴。
+> 驗證現況：核心與開發依賴已安裝並鎖定；Python 編譯、Ruff、`pip check`、23 個 unit／GUI smoke tests、實際 Qt WebChannel 互動測試與合成資料啟動測試皆通過。
 
 ## P0：先修正確性與資源問題
 
-- [ ] 修正 ROI 圖片搜尋的參數錯誤。
+- [x] 修正 ROI 圖片搜尋的參數錯誤。
   - `ui.py:277` 呼叫 `open_image_from_search(number, code, no, current_button_name)`，但 `search2.py:4` 需要 `(option, number, code, no, button_name)`。
   - 驗收：從 UI 搜尋存在／不存在的 ROI 圖片都不會拋出 `TypeError`，且錯誤會顯示在 UI。
 
-- [ ] 修正 Export Map 把「檔案名稱」建立成資料夾的問題。
+- [x] 修正 Export Map 把「檔案名稱」建立成資料夾的問題。
   - `ui.py:199-225` 傳入的是完整 `target_file`，但 `download_file()` 對它呼叫 `os.makedirs()`。
   - 改為只建立 `Path(target_file).parent`，再 `shutil.copy2(source_file, target_file)`；若檔案已存在，明確定義覆寫或詢問行為。
   - 驗收：匯出結果是單一 `<stage>_<code>.png` 檔案，不是同名資料夾。
 
-- [ ] 修正站點名稱不一致。
+- [x] 修正站點名稱不一致。
   - `plot.py:34` 使用 `INN1`／`INN2`，其他 UI、JSON 與 CSV 路徑使用 `INNER1`／`INNER2`。
   - 建立唯一的 stage 常數／映射來源，避免每個模組各自寫字串。
   - 驗收：點擊 ROI 後，六個站點的對應圖片都從正確資料夾載入。
 
-- [ ] 修正 Loss Map 雙擊點位功能。
+- [x] 修正 Loss Map 雙擊點位功能。
   - `lossmap_plot.py` 的 `Scattergl` 沒有設定 `customdata`，JavaScript 卻讀取 `pointData.customdata`。
   - WebGL 圖層也不會產生目前程式所查找的 `g.point` SVG 節點；應改用 Plotly 事件搭配 `QWebChannel`，並把 `No` 明確放入 `customdata`。
   - 驗收：雙擊紅／灰點都能把正確的 `No` 回填到 `PKG NO`。
 
-- [ ] 讓 Dash server 能真正停止。
+- [x] 讓 Dash server 能真正停止。
   - `plot.py:178-221` 啟動背景執行緒後只 `join(timeout=1)`，沒有送出 shutdown；關閉視窗後 server 很可能仍占用 port，而且非 daemon thread 可能妨礙程式結束。
   - 使用可持有並呼叫 `shutdown()` 的 server；由 OS 配置可用 port，避免 `random.randint()` 的競爭／碰撞。
   - 驗收：反覆開關 ROI 視窗後沒有殘留 listening port，主程式可立即正常結束。
 
-- [ ] 集中管理並清除暫存檔。
+- [x] 集中管理並清除暫存檔。
   - `plot.py` 與 `lossmap_plot.py` 產生 `delete=False` HTML，離開視窗後沒有刪除。
   - `lossmap_plot.py` 改用 `TemporaryDirectory`／`try...finally`，避免例外時 `temp_dir` 未定義或清理被跳過。
   - 驗收：正常關閉與故意觸發例外後，系統暫存目錄都不持續累積 VSA HTML／CSV。
 
 ## P1：建立可重現且安全的開發環境
 
-- [ ] 補上 `pyproject.toml`（建議）或 `requirements.txt`，記錄並鎖定經驗證的直接依賴。
+- [x] 補上 `pyproject.toml`（建議）或 `requirements.txt`，記錄並鎖定經驗證的直接依賴。
   - 目前程式至少使用 PySide6（含 WebEngine）、pandas、Plotly、Dash、Flask、Pillow。
   - 記錄支援的 Python 版本；目前 `env/` 是 Python 3.13.0，但只安裝了 `pip 24.2`。
   - 驗收：在全新的 `env/` 依文件安裝後，`python main.py` 可啟動，`python -m pip check` 通過。
 
-- [ ] 保留 `env/` 工作方式，但在根目錄 `.gitignore` 明確忽略虛擬環境。
+- [x] 保留 `env/` 工作方式，但在根目錄 `.gitignore` 明確忽略虛擬環境。
   - 加入 `env/`、`.venv/`、`venv/`、`__pycache__/`、`*.py[cod]`、測試／建置 cache。
   - 現在是靠 `env/.gitignore` 自我忽略；根規則更清楚，也能防止重建環境時意外進版控。
 
-- [ ] 區分 `env/` 與 `.env`。
+- [x] 區分 `env/` 與 `.env`。
   - `env/` 是 Python 虛擬環境，不放進 Git。
   - `.env` 若未來用來放資料根目錄或秘密，也不放進 Git；只提交不含真實秘密的 `.env.example`。
   - 不要把 API key、帳密或內部路徑寫進 `AGENTS.md`、README、測試快照與 log。
 
-- [ ] 移除硬編碼的 `D:/Database-PC`。
+- [x] 移除硬編碼的 `D:/Database-PC`。
   - 建立單一設定入口，例如 `VSA_DATA_ROOT` 環境變數，並提供合理預設或首次啟動選擇資料夾。
   - 用 `pathlib.Path` 組路徑，檢查解析後路徑仍位於 data root 內，避免 Lot ID／Component ID 中的 `..` 或分隔符跳出預期目錄。
   - 驗收：不改程式碼即可切換測試資料與正式資料；非法輸入會被 UI 阻擋。
 
-- [ ] 從 Git 移除產生物 `output_plot.html`，並加入忽略規則。
+- [x] 從 Git 移除產生物 `output_plot.html`，並加入忽略規則。
   - 目前該檔約 3.98 MB，執行 Customize Map 時會直接覆寫它，且多個視窗可能互相覆蓋。
   - 每個視窗改用獨立暫存檔，關閉時清除。
 
-- [ ] 新增 `README.md`。
+- [x] 新增 `README.md`。
   - 說明用途、Windows 前置需求、`env/` 建立／啟用／安裝／執行指令、資料目錄結構、必要 CSV 欄位，以及常見錯誤排查。
   - README 範例不得包含真實 lot、component、內部分享路徑或秘密。
+
+- [x] 新增面試展示用的合成資料產生器。
+  - `python -m scripts.create_demo_data` 會建立被 Git 忽略的 `demo_data/`，不需要攜帶任何正式生產資料。
+  - 已用合成的 `DEMO-LOT`／`DEMO-CMP` 完成離線 Qt 啟動與 map preview smoke test。
 
 - [x] 新增根目錄 `AGENTS.md`，讓後續 Codex／開發者遵守同一套規則。
   - 指定使用 `env\\Scripts\\python.exe` 執行測試與工具。
@@ -78,7 +82,7 @@
 
 ## P1：補測試與自動檢查
 
-- [ ] 建立 `tests/`，先把純運算從 GUI 拆出後測試。
+- [x] 建立 `tests/`，先把純運算從 GUI 拆出後測試。
   - CSV schema 驗證：缺少 `No`、`Row`、`Col`、`DefectType`、空檔與型別錯誤。
   - `preprocess_csv()` 的 good／bad／flip 規則。
   - Loss Map merge：座標重複、座標缺失及 outer／inner join 的預期行為。
@@ -86,11 +90,14 @@
   - 匯出：目的目錄不存在、同名檔案已存在與複製錯誤。
   - 路徑安全：空白、中文、`..`、絕對路徑與非法字元。
 
-- [ ] 加入 GUI smoke test。
+- [ ] 擴充 CSV 與 merge edge-case 測試。
+  - 補空 CSV、非數值座標、重複座標、只存在單一 stage 的座標，以及明確的 join 策略。
+
+- [x] 加入 GUI smoke test。
   - 至少驗證主視窗可建立、產品切換會更新按鈕、初始 Product A 按鈕名稱正確，以及開關 PlotWindow 不殘留 server。
   - 測試使用 offscreen Qt 與臨時資料，不連正式 `D:/Database-PC`。
 
-- [ ] 建立 `pyproject.toml` 工具設定與 CI。
+- [x] 建立 CI 與 `pyproject.toml` 工具設定。
   - 建議：Ruff（lint/format）、pytest、coverage；CI 執行 compile、lint、unit tests 與 `pip check`。
   - 先建立可接受的 baseline，再逐步收緊，避免一次格式化掩蓋功能修改。
 
@@ -157,7 +164,7 @@
 
 ## 建議執行順序
 
-1. 完成所有 P0，先恢復主要功能正確性並停止資源洩漏。
+1. 所有 P0 已完成：主要功能正確性與資源洩漏已有自動化回歸測試。
 2. 建立依賴檔、根 `.gitignore`、README 與 `.env.example`（若採環境變數）；`AGENTS.md` 與 repo skill 已完成。
 3. 抽出路徑／CSV／圖片純函式並補 unit tests，再做套件化重構。
 4. 加 CI 後處理背景 worker、效能與 UI 改善。

@@ -1,8 +1,8 @@
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea
-)
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+
 from lossmap_plot import PlotWindow
+
 
 class LossMapUI(QWidget):
     def __init__(self, main_ui):
@@ -24,7 +24,11 @@ class LossMapUI(QWidget):
 
     def plot_data(self):
         self.plot_window = PlotWindow(self.main_ui, self.web_view)
-        self.plot_window.show()
 
     def get_current_button_name(self):
         return self.main_ui.current_button_name
+
+    def closeEvent(self, event):
+        if hasattr(self, "plot_window"):
+            self.plot_window.close()
+        super().closeEvent(event)

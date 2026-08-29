@@ -1,222 +1,245 @@
-import sys
-import os
+"""Interactive ROI plot window with deterministic cleanup."""
+
+from __future__ import annotations
+
+import base64
+import tempfile
+import threading
+from io import BytesIO
+from pathlib import Path
+
+import dash.exceptions
 import pandas as pd
 import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
-from PIL import Image
-from io import BytesIO
-import base64
-import threading
-import dash.exceptions
 from flask import Flask
-from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QWidget
-from PySide6.QtWebEngineWidgets import QWebEngineView
+from PIL import Image
+from plotly.colors import qualitative
 from PySide6.QtCore import QUrl, Signal
-import tempfile
-import random
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from werkzeug.serving import make_server
+
+from data_processing import validate_columns
+from vsa_paths import DYNAMIC_STAGES, roi_folder
+
+
+def _image_filename(value: object) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return f"{value}.tiff"
 
 
 class PlotWindow(QMainWindow):
-    url_signal = Signal(str)  # 信号，用于更新动态视图
+    url_signal = Signal(str)
 
-    def __init__(self, csv_path, image_folder_path, current_button_name, port, image_url, number, code, option):
+    def __init__(
+        self,
+        csv_path,
+        image_folder_path,
+        current_button_name,
+        image_url,
+        number,
+        code,
+        option,
+    ):
         super().__init__()
-        self.csv_path = csv_path
-        self.image_folder_path = image_folder_path
+        self.csv_path = Path(csv_path)
+        self.image_folder_path = Path(image_folder_path)
         self.current_button_name = current_button_name
-        self.port = port
-        self.image_url = image_url
+        self.image_url = Path(image_url)
         self.number = number
         self.code = code
         self.option = option
-        self.dynamic_folders = ["MT", "DC2", "INN1", "RDL", "INN2", "EMC"]
+        self.dynamic_folders = DYNAMIC_STAGES
+        self.http_server = None
         self.dash_thread = None
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="vsa-roi-")
 
-        self.initUI()
+        self.init_ui()
         self.prepare_data_and_plot()
 
-    def initUI(self):
-        self.setWindowTitle(f"Plotly Hover Image Example - {self.current_button_name}")
+    def init_ui(self):
+        self.setWindowTitle(f"ROI inspection - {self.current_button_name}")
         self.setGeometry(100, 100, 1600, 1200)
 
-        # 主布局
         self.main_layout = QVBoxLayout()
-
-        # 第一行布局：左侧 Dash 图表和右侧两个动态视图
         self.top_layout = QHBoxLayout()
 
-        # 左侧 Dash 图表
         self.web_view_left = QWebEngineView()
         self.web_view_left.setFixedSize(1300, 900)
-
-        # 第一个动态视图
         self.web_view_right_1 = QWebEngineView()
         self.web_view_right_1.setFixedSize(330, 330)
-
-        # 第二个固定动态视图
         self.web_view_right_2 = QWebEngineView()
         self.web_view_right_2.setFixedSize(330, 330)
 
-        # 加载固定图片到第二个动态视图
-        if self.image_url and os.path.exists(self.image_url):
+        if self.image_url.is_file():
             html_path = self.create_temp_html(self.image_url)
-            self.web_view_right_2.setUrl(QUrl.fromLocalFile(html_path))
-        else:
-            print(f"Error: Invalid image URL or file not found: {self.image_url}")
+            self.web_view_right_2.setUrl(QUrl.fromLocalFile(str(html_path)))
 
         self.top_layout.addWidget(self.web_view_left)
         self.top_layout.addWidget(self.web_view_right_1)
         self.top_layout.addWidget(self.web_view_right_2)
 
-        # 第二行布局：六个动态视图
         self.bottom_layout = QHBoxLayout()
         self.dynamic_views = []
-        for i, folder in enumerate(self.dynamic_folders):
+        for _folder in self.dynamic_folders:
             dynamic_view = QWebEngineView()
             dynamic_view.setFixedSize(330, 330)
             self.bottom_layout.addWidget(dynamic_view)
             self.dynamic_views.append(dynamic_view)
 
-        # 将布局加入到主窗口
         self.main_layout.addLayout(self.top_layout)
         self.main_layout.addLayout(self.bottom_layout)
 
-        # 设置主布局
         self.container = QWidget()
         self.container.setLayout(self.main_layout)
         self.setCentralWidget(self.container)
-
-        # 连接点击事件信号
         self.url_signal.connect(self.update_views)
 
     def prepare_data_and_plot(self):
-        df = pd.read_csv(self.csv_path)
+        defect_data = pd.read_csv(self.csv_path)
+        validate_columns(defect_data)
+        defect_data = defect_data.loc[defect_data["DefectType"] != "ok"].copy()
+        defect_data["Image"] = defect_data["No"].map(_image_filename)
 
-        # 过滤掉 DefectType 为 'ok' 的行
-        df = df[df['DefectType'] != 'ok']
-
-        # 动态添加 Image 列
-        df['Image'] = df['No'].apply(lambda x: f'{x}.tiff')
-
-        # 自动生成 DefectType 的颜色
-        defect_types = df['DefectType'].unique()
-        color_map = {defect: f"rgb({random.randint(0, 255)}, {random.randint(0, 255)}, {random.randint(0, 255)})" for defect in defect_types}
-
-        fig = make_subplots(rows=1, cols=1)
-        hover_texts = []
-        click_urls = []
-
-        for i, row in df.iterrows():
-            image_path = os.path.join(self.image_folder_path, row['Image']).replace("\\", "/")
-            hover_text = f"<b>DefectType:</b> {row['DefectType']}<br><b>Col:</b> {row['Col']}<br><b>Row:</b> {row['Row']}<br><b>No:</b> {row['No']}"
-            hover_texts.append(hover_text)
-            click_urls.append(image_path)
-
-        scatter = go.Scatter(
-            x=df['Col'],
-            y=df['Row'],
-            mode='markers',
-            marker=dict(size=3, color=[color_map[defect_type] for defect_type in df['DefectType']]),
-            text=hover_texts,
-            customdata=click_urls,
-            hoverinfo='text',
+        defect_types = sorted(defect_data["DefectType"].astype(str).unique())
+        color_map = {
+            defect: qualitative.Plotly[index % len(qualitative.Plotly)]
+            for index, defect in enumerate(defect_types)
+        }
+        colors = defect_data["DefectType"].astype(str).map(color_map)
+        hover_texts = (
+            "<b>DefectType:</b> "
+            + defect_data["DefectType"].astype(str)
+            + "<br><b>Col:</b> "
+            + defect_data["Col"].astype(str)
+            + "<br><b>Row:</b> "
+            + defect_data["Row"].astype(str)
+            + "<br><b>No:</b> "
+            + defect_data["No"].astype(str)
         )
+        click_urls = [
+            str(self.image_folder_path / image_name) for image_name in defect_data["Image"]
+        ]
 
-
-        fig.add_trace(scatter)
-        fig.update_layout(
+        figure = go.Figure(
+            go.Scatter(
+                x=defect_data["Col"],
+                y=defect_data["Row"],
+                mode="markers",
+                marker={"size": 3, "color": colors},
+                text=hover_texts,
+                customdata=click_urls,
+                hoverinfo="text",
+            )
+        )
+        figure.update_layout(
             title=f"Scatter Plot - {self.current_button_name}",
             xaxis_title="Col",
             yaxis_title="Row",
             hovermode="closest",
-            margin=dict(l=0, r=0, t=0, b=0),
+            margin={"l": 0, "r": 0, "t": 40, "b": 0},
             width=1200,
             height=900,
         )
-        fig.update_yaxes(autorange="reversed")
+        figure.update_yaxes(autorange="reversed")
 
-        server = Flask(__name__)
-        self.app = Dash(__name__, server=server)
-        self.app.layout = html.Div([dcc.Graph(id="scatter-plot", figure=fig, config={"displayModeBar": False})])
+        flask_server = Flask(f"vsa_plot_{id(self)}")
+        self.app = Dash(f"vsa_plot_{id(self)}", server=flask_server)
+        self.app.layout = html.Div(
+            [dcc.Graph(id="scatter-plot", figure=figure, config={"displayModeBar": False})]
+        )
 
         @self.app.callback(
             Output("scatter-plot", "figure"),
             Input("scatter-plot", "clickData"),
             State("scatter-plot", "figure"),
         )
-        def open_url(clickData, current_fig):
-            if clickData is None:
+        def open_url(click_data, current_figure):
+            if click_data is None:
                 raise dash.exceptions.PreventUpdate
-            else:
-                image_path = clickData["points"][0]["customdata"]
-                if os.path.exists(image_path):
-                    html_path = self.create_temp_html(image_path)
-                    self.url_signal.emit(image_path)
-                else:
-                    print(f"Error: File not found: {image_path}")
-            return current_fig
+            image_path = Path(click_data["points"][0]["customdata"])
+            if image_path.is_file():
+                self.url_signal.emit(str(image_path))
+            return current_figure
 
         self.run_dash_app()
 
-    def create_temp_html(self, image_path):
-        if not os.path.exists(image_path):
-            print(f"File not found: {image_path}")
-            return ""
-        pil_img = Image.open(image_path).resize((300, 300))
-        buff = BytesIO()
-        pil_img.save(buff, format="PNG")
-        img_str = base64.b64encode(buff.getvalue()).decode("utf-8")
-        img_tag = f'<img src="data:image/png;base64,{img_str}" style="width:300px;height:300px;">'
+    def create_temp_html(self, image_path: str | Path) -> Path:
+        image_path = Path(image_path)
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Image not found: {image_path}")
 
-        temp_html = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
-        with open(temp_html.name, "w") as f:
-            f.write(f"<html><body>{img_tag}</body></html>")
-        return temp_html.name
+        with Image.open(image_path) as source_image:
+            preview = source_image.convert("RGB").resize((300, 300))
+            buffer = BytesIO()
+            preview.save(buffer, format="PNG")
+        image_data = base64.b64encode(buffer.getvalue()).decode("ascii")
+        image_tag = (
+            f'<img src="data:image/png;base64,{image_data}" '
+            'style="width:300px;height:300px;object-fit:contain;">'
+        )
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            delete=False,
+            suffix=".html",
+            dir=self.temp_dir.name,
+        ) as temp_html:
+            temp_html.write(f"<html><body>{image_tag}</body></html>")
+            return Path(temp_html.name)
 
     def run_dash_app(self):
-        def run():
-            self.app.run_server(debug=False, use_reloader=False, port=self.port)
-
-        self.dash_thread = threading.Thread(target=run)
+        self.http_server = make_server("127.0.0.1", 0, self.app.server, threaded=True)
+        port = self.http_server.server_port
+        self.dash_thread = threading.Thread(
+            target=self.http_server.serve_forever,
+            name=f"vsa-dash-{port}",
+            daemon=True,
+        )
         self.dash_thread.start()
-        self.web_view_left.setUrl(QUrl(f"http://127.0.0.1:{self.port}"))
+        self.web_view_left.setUrl(QUrl(f"http://127.0.0.1:{port}"))
 
     def update_views(self, url):
-        """
-        更新所有动态视图
-        """
-        if url:
-            
-            url = url.replace("\\", "/")
+        image_path = Path(url)
+        if not image_path.is_file():
+            return
 
-            
-            if os.path.exists(url):
-                html_path = self.create_temp_html(url)  
-                self.web_view_right_1.setUrl(QUrl.fromLocalFile(html_path))  
+        html_path = self.create_temp_html(image_path)
+        self.web_view_right_1.setUrl(QUrl.fromLocalFile(str(html_path)))
+
+        for index, folder in enumerate(self.dynamic_folders):
+            related_image = (
+                roi_folder(
+                    self.option,
+                    self.number,
+                    folder,
+                    self.code,
+                )
+                / image_path.name
+            )
+            if related_image.is_file():
+                related_html = self.create_temp_html(related_image)
+                self.dynamic_views[index].setUrl(QUrl.fromLocalFile(str(related_html)))
             else:
-                print(f"Error: File not found for first dynamic view: {url}")
-
-            
-            base_filename = os.path.basename(url)
-
-            
-            for i, folder in enumerate(self.dynamic_folders):
-                try:
-                    folder_path = f"D:/Database-PC/{self.option}/roi/{self.number}/{folder}/{self.code}/{base_filename}"
-                    folder_path = folder_path.replace("\\", "/")  
-
-                    if os.path.exists(folder_path):
-                        html_path = self.create_temp_html(folder_path)
-                        self.dynamic_views[i].setUrl(QUrl.fromLocalFile(html_path))
-                    else:
-                        print(f"File not found for folder {folder}: {folder_path}")
-                except Exception as e:
-                    print(f"Error updating view {i}: {e}")
-
+                self.dynamic_views[index].setHtml(f"<p>Image not found for {folder}</p>")
 
     def closeEvent(self, event):
-        if self.dash_thread and self.dash_thread.is_alive():
-            self.dash_thread.join(timeout=1)
-        event.accept()
+        if self.http_server is not None:
+            self.http_server.shutdown()
+            self.http_server.server_close()
+        if self.dash_thread is not None and self.dash_thread.is_alive():
+            self.dash_thread.join(timeout=3)
+
+        for web_view in [
+            self.web_view_left,
+            self.web_view_right_1,
+            self.web_view_right_2,
+            *self.dynamic_views,
+        ]:
+            web_view.setUrl(QUrl("about:blank"))
+        self.temp_dir.cleanup()
+        super().closeEvent(event)

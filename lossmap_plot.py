@@ -1,20 +1,32 @@
+"""Interactive loss-map visualization backed by Qt WebChannel."""
+
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+
 import pandas as pd
 import plotly.graph_objects as go
-from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QDialog, QVBoxLayout, QCheckBox, QPushButton, QApplication
-from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtCore import QUrl, Signal, Slot, QObject
-import os
-import tempfile
-import shutil
-from flip import flip_csv_files
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from data_processing import classify_defects, merge_loss_frames, validate_columns
+from vsa_paths import LOSS_STAGE_PAIRS, csv_path
+
 
 def select_defects(defect_types, title):
-    app = QApplication.instance() or QApplication([])  # Check if there's an existing instance
     dialog = QDialog()
     dialog.setWindowTitle(title)
-    layout = QVBoxLayout()
-
+    layout = QVBoxLayout(dialog)
     checkboxes = {str(defect): QCheckBox(str(defect)) for defect in defect_types}
 
     for checkbox in checkboxes.values():
@@ -22,44 +34,114 @@ def select_defects(defect_types, title):
 
     button = QPushButton("Confirm")
     layout.addWidget(button)
-    dialog.setLayout(layout)
-
     selected_defects = []
 
     def on_confirm():
         nonlocal selected_defects
-        selected_defects = [defect for defect, checkbox in checkboxes.items() if checkbox.isChecked()]
+        selected_defects = [
+            defect for defect, checkbox in checkboxes.items() if checkbox.isChecked()
+        ]
         dialog.accept()
 
     button.clicked.connect(on_confirm)
     dialog.exec()
-
     return selected_defects
 
-def preprocess_csv(file_path, selection_type="good", flip=False):
-    print(f"Reading CSV file: {file_path}")
+
+def preprocess_csv(file_path, selection_type="good", flip=False, selector=select_defects):
     defect_data = pd.read_csv(file_path)
-    defect_types = defect_data['DefectType'].unique()
+    validate_columns(defect_data)
     title = "Select Good Defects" if selection_type == "good" else "Select Bad Defects"
-    selected_defects = select_defects(defect_types, title)
-    print(f"Selected {'good' if selection_type == 'good' else 'bad'} defects: {selected_defects}")
+    selected_defects = selector(defect_data["DefectType"].unique(), title)
+    return classify_defects(
+        defect_data,
+        selected_defects,
+        selection_type,
+        flip=flip,
+    )
 
-    if selection_type == "good":
-        defect_data['ConvertedDefectType'] = defect_data['DefectType'].apply(
-            lambda x: 1 if x in selected_defects else 0)
-    else:
-        defect_data['ConvertedDefectType'] = defect_data['DefectType'].apply(
-            lambda x: 0 if x in selected_defects else 1)
-    
-    if flip:
-        defect_data['Col'] = defect_data['Col'].max() - defect_data['Col']
 
-    return defect_data
+def build_loss_figure(merged, stage, point_size=2, width=1000, height=800):
+    figure = go.Figure(
+        go.Scattergl(
+            x=merged["Col"],
+            y=merged["Row"],
+            mode="markers",
+            customdata=merged["SelectedNo"].astype(str),
+            text=merged["SelectedNo"].astype(str),
+            hovertemplate="Col: %{x}<br>Row: %{y}<br>No: %{text}<extra></extra>",
+            marker={"color": merged["Color"], "size": point_size, "opacity": 0.6},
+        )
+    )
+    figure.update_layout(
+        title=f"Map of Defects - {stage}",
+        title_font={"size": 20},
+        xaxis_title="Col Coordinate",
+        yaxis_title="Row Coordinate",
+        yaxis={"autorange": "reversed"},
+        margin={"l": 70, "r": 30, "t": 70, "b": 30},
+        plot_bgcolor="black",
+        paper_bgcolor="black",
+        font={"color": "white"},
+        width=width,
+        height=height,
+    )
+    figure.update_xaxes(showgrid=True, gridcolor="gray")
+    figure.update_yaxes(showgrid=True, gridcolor="gray")
+    return figure
+
+
+def build_loss_html(figure):
+    post_script = r"""
+    (function () {
+        const plot = document.getElementById('{plot_id}');
+        let handler = null;
+        let lastNumber = null;
+        let lastClickAt = 0;
+
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+            handler = channel.objects.handler;
+        });
+
+        plot.on('plotly_click', function (eventData) {
+            if (!eventData.points || eventData.points.length === 0) return;
+            const number = String(eventData.points[0].customdata);
+            const now = Date.now();
+            if (handler && number === lastNumber && now - lastClickAt <= 500) {
+                handler.receivePoint(number);
+                lastNumber = null;
+                lastClickAt = 0;
+                return;
+            }
+            lastNumber = number;
+            lastClickAt = now;
+        });
+    }());
+    """
+    page_html = figure.to_html(
+        full_html=True,
+        include_plotlyjs=True,
+        post_script=post_script,
+    )
+    return page_html.replace(
+        "<head>",
+        '<head><script src="qrc:///qtwebchannel/qwebchannel.js"></script>',
+        1,
+    )
+
 
 class PlotWindow(QMainWindow):
     point_selected = Signal(str)
 
-    def __init__(self, main_ui, web_view, custom_color_map=None, plot_width=1000, plot_height=800, point_size=2):
+    def __init__(
+        self,
+        main_ui,
+        web_view,
+        custom_color_map=None,
+        plot_width=1000,
+        plot_height=800,
+        point_size=2,
+    ):
         super().__init__()
         self.main_ui = main_ui
         self.web_view = web_view
@@ -67,146 +149,67 @@ class PlotWindow(QMainWindow):
         self.plot_width = plot_width
         self.plot_height = plot_height
         self.point_size = point_size
-        self.initUI()
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="vsa-loss-")
+        self.init_ui()
 
-    def initUI(self):
+    def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        layout = QVBoxLayout(self.central_widget)
+        QVBoxLayout(self.central_widget)
 
         self.channel = QWebChannel()
         self.handler = WebEnginePageHandler(self)
-        self.channel.registerObject('handler', self.handler)
+        self.channel.registerObject("handler", self.handler)
         self.web_view.page().setWebChannel(self.channel)
-
         self.plot()
 
     def get_csv_paths(self):
-        number = self.main_ui.input_number.text()
-        code = self.main_ui.input_code1.text() if self.main_ui.current_button_name == 'MT' else self.main_ui.input_code1.text()
-        current_button_name = self.main_ui.current_button_name
+        number = self.main_ui.input_number.text().strip()
+        code = self.main_ui.input_code1.text().strip()
+        current_stage = self.main_ui.current_button_name
         option = self.main_ui.combo.currentText()
-        csv_paths = {
-            "LOSS1": [f"D:/Database-PC/{option}/csv/{number}/MT/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/DC2/{code}.csv"],
-            "LOSS2": [f"D:/Database-PC/{option}/csv/{number}/DC2/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/INNER1/{code}.csv"],
-            "LOSS3": [f"D:/Database-PC/{option}/csv/{number}/INNER1/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/RDL/{code}.csv"],
-            "LOSS4": [f"D:/Database-PC/{option}/csv/{number}/RDL/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/INNER2/{code}.csv"],
-            "LOSS5": [f"D:/Database-PC/{option}/csv/{number}/INNER2/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/CU/{code}.csv"],
-            "LOSS6": [f"D:/Database-PC/{option}/csv/{number}/CU/{code}.csv", f"D:/Database-PC/{option}/csv/{number}/EMC/{code}.csv"]
-        }
-
-        print(f"CSV paths: {csv_paths.get(current_button_name, [])}")
-        return csv_paths.get(current_button_name, [])
+        stage_pair = LOSS_STAGE_PAIRS.get(current_stage)
+        if stage_pair is None:
+            raise ValueError("Select a LOSS stage first.")
+        return tuple(csv_path(option, number, stage, code) for stage in stage_pair)
 
     def plot(self):
-        csv_paths = self.get_csv_paths()
-        if not csv_paths or len(csv_paths) != 2:
-            print(f"Invalid CSV paths for {self.main_ui.current_button_name}")
-            return
-
         try:
-            temp_dir = tempfile.mkdtemp()
+            first_csv, second_csv = self.get_csv_paths()
+            for file_path in (first_csv, second_csv):
+                if not file_path.is_file():
+                    raise FileNotFoundError(f"CSV file not found: {file_path}")
 
-            # Process first CSV (Good Defects)
-            temp_file1 = os.path.join(temp_dir, "temp1.csv")
-            flip_first_csv = self.main_ui.current_button_name == 'LOSS1'
-            defect_data1 = preprocess_csv(csv_paths[0], selection_type="good", flip=flip_first_csv)
-            defect_data1.to_csv(temp_file1, index=False)
-
-            # Process second CSV (Bad Defects)
-            temp_file2 = os.path.join(temp_dir, "temp2.csv")
-            defect_data2 = preprocess_csv(csv_paths[1], selection_type="bad")
-            defect_data2.to_csv(temp_file2, index=False)
-
-            df1 = pd.read_csv(temp_file1)
-            df2 = pd.read_csv(temp_file2)
-
-            print("DF1 head:")
-            print(df1.head())
-            print("DF2 head:")
-            print(df2.head())
-
-            print("DF1 Row and Col unique values:")
-            print(df1[['Row', 'Col']].drop_duplicates())
-            print("DF2 Row and Col unique values:")
-            print(df2[['Row', 'Col']].drop_duplicates())
-
-        except Exception as e:
-            print(f"Error reading CSV files: {e}")
-            shutil.rmtree(temp_dir)
+            flip_first_csv = self.main_ui.current_button_name == "LOSS1"
+            good_frame = preprocess_csv(first_csv, selection_type="good", flip=flip_first_csv)
+            bad_frame = preprocess_csv(second_csv, selection_type="bad")
+            merged = merge_loss_frames(good_frame, bad_frame)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self.main_ui, "Loss map error", str(error))
             return
 
-        # Combine dataframes and calculate the difference
-        try:
-            df_merged = pd.merge(df1, df2, on=['Row', 'Col'], suffixes=('_good', '_bad'))
-            df_merged['Difference'] = df_merged['ConvertedDefectType_good'] - df_merged['ConvertedDefectType_bad']
-            df_merged['Color'] = df_merged['Difference'].apply(lambda x: 'red' if x == 1 else 'gray')
-
-            print("Merged DF head:")
-            print(df_merged.head())
-        except Exception as e:
-            print(f"Error merging dataframes: {e}")
-            shutil.rmtree(temp_dir)
-            return
-
-        fig = go.Figure()
-
-        fig.add_trace(go.Scattergl(
-            x=df_merged['Col'],
-            y=df_merged['Row'],
-            mode='markers',
-            marker=dict(
-                color=df_merged['Color'],
-                size=self.point_size,
-                opacity=0.6
-            )
-        ))
-
-        fig.update_layout(
-            title=f'Map of Defects - {self.main_ui.current_button_name}',
-            title_font=dict(size=20),
-            xaxis_title='Col Coordinate',
-            yaxis_title='Row Coordinate',
-            yaxis=dict(autorange='reversed'),
-            margin=dict(l=70, r=30, t=70, b=30),
-            plot_bgcolor='black',
-            paper_bgcolor='black',
-            font=dict(color='white')
+        figure = build_loss_figure(
+            merged,
+            self.main_ui.current_button_name,
+            self.point_size,
+            self.plot_width,
+            self.plot_height,
         )
-
-        fig.update_xaxes(showgrid=True, gridcolor='gray')
-        fig.update_yaxes(showgrid=True, gridcolor='gray')
-
-        # Save the plot as an HTML file and display it
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as temp_file:
-            fig.write_html(temp_file.name)
-
-            with open(temp_file.name, 'a') as f:
-                f.write('''
-                    <script>
-                        document.querySelectorAll('g.point').forEach(function(point) {
-                            point.addEventListener('dblclick', function(event) {
-                                var pointData = event.target.__data__;
-                                if (pointData && pointData.customdata && pointData.customdata.length > 0) {
-                                    var no = pointData.customdata[0];
-                                    new QWebChannel(qt.webChannelTransport, function(channel) {
-                                        var handler = channel.objects.handler;
-                                        handler.receivePoint(no);
-                                    });
-                                }
-                            });
-                        });
-                    </script>
-                ''')
-
-            self.web_view.setUrl(QUrl.fromLocalFile(os.path.abspath(temp_file.name)))
-
-        shutil.rmtree(temp_dir)
+        page_html = build_loss_html(figure)
+        output_path = Path(self.temp_dir.name) / "loss-map.html"
+        output_path.write_text(page_html, encoding="utf-8")
+        self.web_view.setUrl(QUrl.fromLocalFile(str(output_path)))
 
     @Slot(str)
     def receivePoint(self, no):
         self.main_ui.update_search_field(no)
         self.point_selected.emit(no)
+
+    def closeEvent(self, event):
+        self.web_view.setUrl(QUrl("about:blank"))
+        self.temp_dir.cleanup()
+        super().closeEvent(event)
+
 
 class WebEnginePageHandler(QObject):
     def __init__(self, plot_window):

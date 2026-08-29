@@ -16,3 +16,28 @@ __pycache__/
 build/
 dist/
 main.spec
+
+# Python environments and caches
+env/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and generated output
+.env
+.env.*
+!.env.example
+output_plot.html
+demo_data/
+*.log
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
