@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-30
+
+- Renamed the `RDL break` defect type in `resources/rule.json` to `trace break`, the last
+  process term carried over from the internal tool. Classification behavior is unchanged;
+  a data root using the old label must rename it in its CSVs.
+
 ## 0.4.0 - 2026-08-30
 
 - Renamed the process stages to `STAGE1`-`STAGE8` for both products, replacing the stage
