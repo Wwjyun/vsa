@@ -62,7 +62,7 @@ into an installable `src/vsa` package with a testable core.
 - **Layering** — `views/` (Qt + Plotly) orchestrates; `services/` (pandas, Pillow, shutil, OS)
   computes. Nothing in `services/` needs a widget, which is why 37 tests run headless in CI.
 - **One source of truth** — data root, stage vocabulary, and path construction each live in
-  exactly one module. The legacy bug where `INN1` and `INNER1` disagreed across modules is the
+  exactly one module. The legacy bug where one module abbreviated a stage name the rest spelled out is the
   concrete motivation.
 - **Safety at the boundary** — external CSVs are schema- and type-validated; user input is
   validated as path components and confined below the data root.

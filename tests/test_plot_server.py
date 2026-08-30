@@ -20,7 +20,7 @@ def test_plot_window_stops_server_and_cleans_temp_files(qtbot, tmp_path):
     window = RoiPlotWindow(
         csv_path,
         roi_folder,
-        "MT",
+        "STAGE1",
         example_image,
         "LOT-1",
         "CMP-1",

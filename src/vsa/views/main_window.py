@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from vsa.config import (
     LOSS_STAGE_PAIRS,
+    STAGE_SEQUENCE,
     ConfigurationError,
     get_data_root,
     load_product_stages,
@@ -346,9 +347,9 @@ class MainWindow(QWidget):
 
     def search(self):
         try:
-            self.current_button_name = "MT"
+            self.current_button_name = STAGE_SEQUENCE[0]
             self._sync_stage_chrome()
-            self.display_map_image("MT")
+            self.display_map_image(self.current_button_name)
         except ValueError as error:
             QMessageBox.warning(self, "Missing input", str(error))
 

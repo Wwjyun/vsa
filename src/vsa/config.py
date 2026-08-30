@@ -11,29 +11,29 @@ DATA_ROOT_ENV = "VSA_DATA_ROOT"
 DEFAULT_DATA_ROOT = Path("D:/Database-PC")
 
 STAGE_SEQUENCE = (
-    "MT",
+    "STAGE1",
     "LOSS1",
-    "DC2",
+    "STAGE2",
     "LOSS2",
-    "INNER1",
+    "STAGE3",
     "LOSS3",
-    "RDL",
+    "STAGE4",
     "LOSS4",
-    "INNER2",
+    "STAGE5",
     "LOSS5",
-    "CU",
+    "STAGE6",
     "LOSS6",
-    "EMC",
-    "FPY",
+    "STAGE7",
+    "STAGE8",
 )
-DYNAMIC_STAGES = ("MT", "DC2", "INNER1", "RDL", "INNER2", "EMC")
+DYNAMIC_STAGES = ("STAGE1", "STAGE2", "STAGE3", "STAGE4", "STAGE5", "STAGE7")
 LOSS_STAGE_PAIRS = {
-    "LOSS1": ("MT", "DC2"),
-    "LOSS2": ("DC2", "INNER1"),
-    "LOSS3": ("INNER1", "RDL"),
-    "LOSS4": ("RDL", "INNER2"),
-    "LOSS5": ("INNER2", "CU"),
-    "LOSS6": ("CU", "EMC"),
+    "LOSS1": ("STAGE1", "STAGE2"),
+    "LOSS2": ("STAGE2", "STAGE3"),
+    "LOSS3": ("STAGE3", "STAGE4"),
+    "LOSS4": ("STAGE4", "STAGE5"),
+    "LOSS5": ("STAGE5", "STAGE6"),
+    "LOSS6": ("STAGE6", "STAGE7"),
 }
 
 

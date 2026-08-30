@@ -95,10 +95,13 @@ Typical workflow:
 
 1. Select a product.
 2. Enter a Lot ID and Component ID, then press **Search**.
-3. Select a process stage button to preview its map.
+3. Select a process stage button to preview its map. Product A runs `STAGE1`-`STAGE8`
+   with the six `LOSS` comparisons interleaved; the stages of each product come from
+   `vsa/resources/button_names.json`.
 4. Use **ROI** for interactive defect-point inspection. Double-click a point to send its
    number to the **PKG NO** field; **Search** then opens that ROI image.
-5. Select a `LOSS1`–`LOSS6` stage before opening **Loss Map**.
+5. Select a `LOSS1`–`LOSS6` stage before opening **Loss Map**. Each one compares the two
+   stages it sits between, for example `LOSS1` compares `STAGE1` with `STAGE2`.
 6. **Map width**, **Map height**, and **Point size** are optional. They apply to **Loss Map**
    and **Customize Map**, and default to 1000 x 800 with point size 2 when left empty.
 

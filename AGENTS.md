@@ -25,7 +25,7 @@ These instructions apply to the entire repository. This project is a Windows des
 - Preserve existing behavior unless the requested change intentionally alters it.
 - Prefer `pathlib.Path` and a centralized path/configuration layer over repeated hard-coded path strings.
 - Keep Qt UI code separate from CSV calculations, image processing, file operations, and server lifecycle management so non-UI logic can be unit tested.
-- Keep product and stage names in one canonical mapping. Do not introduce another spelling variant such as `INN1` versus `INNER1`.
+- Keep product and stage names in one canonical mapping. Do not introduce another spelling variant such as `ST3` versus `STAGE3`.
 - Validate external CSV schemas and numeric types before processing. Report actionable errors in the UI and retain detailed tracebacks in non-sensitive logs.
 - Use context managers for files, Pillow images, temporary directories, and servers. Clean up temporary HTML/CSV files and background threads when their window closes.
 - Avoid broad `except Exception` handlers unless they re-raise or log a traceback and present a useful UI error.

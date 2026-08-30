@@ -18,7 +18,7 @@
   - 驗收：匯出結果是單一 `<stage>_<code>.png` 檔案，不是同名資料夾。
 
 - [x] 修正站點名稱不一致。
-  - `plot.py:34` 使用 `INN1`／`INN2`，其他 UI、JSON 與 CSV 路徑使用 `INNER1`／`INNER2`。
+  - `plot.py:34` 對第三／第五站點使用縮寫，其他 UI、JSON 與 CSV 路徑使用完整名稱。
   - 建立唯一的 stage 常數／映射來源，避免每個模組各自寫字串。
   - 驗收：點擊 ROI 後，六個站點的對應圖片都從正確資料夾載入。
 
@@ -128,7 +128,7 @@
   - 驗證：`models.InspectionSelection` 統一 product／lot_id／component_id／stage；UI 文案改為一致英文，`map weight`／`map hight` 等錯字與恆真條件式已移除（ruff `F` 規則把關未使用的 import／變數）。
   - 統一 `Lot ID`、`Component ID`、`PKG NO`、product、stage 的 Python 名稱與 UI 文案。
   - 修正 `map weight`／`map hight` 等文案，決定全中文或一致的英文介面。
-  - 移除永遠相同的條件式，例如 `x if stage == 'MT' else x`，以及未使用的 import／變數。
+  - 移除永遠相同的條件式，例如 `x if stage == 'STAGE1' else x`，以及未使用的 import／變數。
 
 - [x] 以 logging 取代 `print()` 與廣泛的 `except Exception`。
   - 驗證：應用程式碼已無 `print()`；唯一的 `except Exception` 在 `workers.py` 的 worker 邊界，且會記錄 traceback 並回報給 UI。

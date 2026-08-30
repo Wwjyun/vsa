@@ -96,7 +96,7 @@ with `QT_QPA_PLATFORM=offscreen`, and `pip check`. Match CI locally before decla
   which rejects separators, `..`, control characters, and Windows-reserved names, and the
   resolved path must stay under the data root.
 - **One source of truth for stages.** `config.STAGE_SEQUENCE` / `DYNAMIC_STAGES` /
-  `LOSS_STAGE_PAIRS`. Do not introduce spelling variants (`INNER1`, never `INN1`).
+  `LOSS_STAGE_PAIRS`. Do not introduce spelling variants (`STAGE3`, never `ST3`).
 - **Keep Qt out of logic.** CSV, image, file, and server logic lives in `services/` and is
   tested without constructing a widget. Views orchestrate; they do not compute.
 - **Validate external data.** CSVs must pass `validate_defect_frame`; loss stages reject

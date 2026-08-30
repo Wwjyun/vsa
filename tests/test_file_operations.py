@@ -4,7 +4,7 @@ from vsa.services.files import copy_file, copy_folder_contents
 def test_copy_file_creates_parent_but_not_filename_directory(tmp_path):
     source = tmp_path / "source.png"
     source.write_bytes(b"map-image")
-    target = tmp_path / "exports" / "MT_CMP-1.png"
+    target = tmp_path / "exports" / "STAGE1_CMP-1.png"
 
     result = copy_file(source, target)
 

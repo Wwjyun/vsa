@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-30
+
+- Renamed the process stages to `STAGE1`-`STAGE8` for both products, replacing the stage
+  codes carried over from the internal tool. The six adjacent-stage comparisons stay
+  `LOSS1`-`LOSS6`, and `LOSS1` now compares `STAGE1` with `STAGE2`.
+- Raised the data-format contract to 2.0: stage identity changed, so a 1.0 data root is read
+  only after its stage folders are renamed. The directory layout and CSV columns are unchanged.
+- Made **Search** open the first stage of `STAGE_SEQUENCE` instead of a hard-coded stage name.
+
 ## 0.3.0 - 2026-08-30
 
 - Redesigned the interface: one stylesheet and token set in `vsa/ui/theme.py`, reusable
